@@ -7,9 +7,13 @@ from mathutils import Vector, Matrix
 from math import radians
 import re
 import bs4
+import traceback
 
 def s2v(s):
-    return [float(c) for c in s.split(" ")]
+    try:
+        return [float(c) for c in s.split(" ")]
+    except:
+        return [0,0,0]
 
 def s2p(s):
     v = s2v(s)
@@ -21,7 +25,8 @@ def s2lp(s):
 
 def fromFwd(zdir):
     ydir = [0,1,0]
-    xdir = Vector(zdir).cross(Vector(ydir))
+    #xdir = Vector(zdir).cross(Vector(ydir))
+    xdir = Vector(ydir).cross(Vector(zdir))
     mtrx = Matrix([xdir, zdir, ydir])
     return mtrx
 
@@ -46,6 +51,7 @@ class AssetObjectObj:
         self.src = tag["src"]
         self.sourcepath = os.path.dirname(self.src)
         self.mtl = tag.attrs.get("mtl", None)
+        self.mtl_basepath = None
         self.loaded = False
         self.imported = False
         self.objects = []
@@ -75,7 +81,9 @@ class AssetObjectObj:
         try:
             urlreq.urlretrieve(source, target)
         except:
+        
             print('Error getting '+source)
+            print(traceback.format_exc())
         if path.endswith(".gz"):
             with gzip.open(target, 'rb') as infile:
                 with open(target[:-3], 'wb') as outfile:
@@ -91,19 +99,25 @@ class AssetObjectObj:
 
         if self.src is not None:
             self.src = self.retrieve(self.src)
-            if self.mtl is None: # try to get default mtl
+            if self.mtl is None:
+                print('NO MTL SET, GETTING FROM '+self.src)
                 with open(self.src,'r') as f:
-                    contents = f.read()
-                    mtllibs = re.findall(r"mtllib (.*?)", mtlfile.read())
-                    for mtllib in mtllibs:
+                    mtllib = re.search(r"mtllib (.*?)$", f.read(), re.MULTILINE)
+                    if mtllib:
                         try:
-                            self.mtl = abs_source( abs_source(self.basepath, self.tag["src"]), mtllib[0])
+                            self.mtl_basepath = self.abs_source( os.path.dirname(self.abs_source(self.basepath, self.tag["src"])), mtllib.group(1))
+                            print('basepath '+self.mtl_basepath)
+                            self.mtl = self.retrieve(self.mtl_basepath)
                         except Exception as e:
                             print(e)
                             self.mtl = None
             if self.mtl is not None:
                 #mtlpath = os.path.dirname(self.mtl)
-                mtlpath = os.path.dirname(self.abs_source(self.basepath,self.mtl))
+                if self.mtl_basepath:
+                    mtlpath = os.path.dirname(self.mtl_basepath)
+                else:
+                    mtlpath = os.path.dirname(self.abs_source(self.basepath,self.mtl))
+                print('mtlpath '+mtlpath)
                 self.mtl = self.retrieve(self.mtl)
                 #print(self.mtl)
                 imgfiles = []
@@ -114,6 +128,7 @@ class AssetObjectObj:
                 for imgfile in imgfiles:
                     if imgfile[0] not in self.downloaded_imgfiles:
                         self.downloaded_imgfiles[imgfile[0]] = self.retrieve(imgfile[0], mtlpath)
+                        print(imgfile[0])
 
                 # rewrite mtl to point to local file
                 with open(self.abs_target(self.mtl), "r") as mtlfile:
@@ -126,9 +141,9 @@ class AssetObjectObj:
             print('Loaded asset.')
     #An .obj can include multiple objects!
     def instantiate(self, tag):
-        print(tag)
-        self.load()
+        #print(tag)
         if not self.imported:
+            self.load()
             self.imported = True
             objects = list(bpy.data.objects)
             if self.mtl is not None:
@@ -172,13 +187,16 @@ class AssetObjectObj:
             if "xdir" in tag.attrs or "ydir" in tag.attrs or "zdir" in tag.attrs:
                 #obj.rotation_euler = (Matrix([s2v(tag.attrs.get("xdir", "1 0 0")), neg(s2v(tag.attrs.get("zdir", "0 0 1"))), s2v(tag.attrs.get("ydir", "0 1 0"))])).to_euler()
                 xdir = s2v(tag.attrs.get("xdir", "1 0 0"))
+                ydir = s2v(tag.attrs.get("ydir", "0 1 0"))
                 zdir = s2v(tag.attrs.get("zdir", "0 0 1"))
+                '''
                 if xdir[0] == zdir[2]:
                     zdir[2] = -zdir[2]
                 if xdir[2] == zdir[0]:
                     zdir[0] = -zdir[0]
                 obj.rotation_euler = (Matrix([xdir, zdir, s2v(tag.attrs.get("ydir", "0 1 0"))])).to_euler()
-                
+                '''
+                obj.rotation_euler = (Matrix([xdir, zdir, ydir])).to_euler()
             else:
                 obj.rotation_euler = fromFwd(neg(s2v(tag.attrs.get("fwd", "0 0 1")))).to_euler()
 
