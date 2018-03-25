@@ -1,6 +1,7 @@
 import os
 import io
 import shutil
+import gzip
 from contextlib import redirect_stdout
 
 import bpy
@@ -66,7 +67,12 @@ def mtm(attr, m):
 	attr += [("ydir", p2s(list(m*Vector([0,0,1,0]))[:3]))]
 	attr += [("zdir", p2s(list(m*Vector([0,-1,0,0]))[:3]))]
 
-def write_html(scene, filepath, path_mode):
+def gzip_compress(in_path, out_path):
+	with open(in_path,'rb') as f_in:
+		with gzip.open(out_path,'wb') as f_out:
+			shutil.copyfileobj(f_in, f_out)
+	
+def write_html(scene, filepath, path_mode, base_path=''):
 
 	stdout = io.StringIO()
 
@@ -78,7 +84,7 @@ def write_html(scene, filepath, path_mode):
 	doc(html)
 
 	head = Tag("head")
-	head(Tag("meta", attr=[("charset","utf-8")], single=True))
+	head(Tag("meta", attr=[("charset","utf-8")], single=False))
 	html(head)
 
 	body = Tag("body")
@@ -140,17 +146,30 @@ def write_html(scene, filepath, path_mode):
 
 		for sky in sky_image:
 			skyname = os.path.basename(sky[0])
-			assetimage = Tag("AssetImage", attr=[("id",sky[1]), ("src",skyname)])
+			assetimage = Tag("AssetImage", attr=[("id",sky[1]), ("src",base_path+skyname)])
 			if not assetimage in assets:
 				assets(assetimage)
 				shutil.copyfile(src=bpy.path.abspath(sky[0]), dst=os.path.join(filepath, skyname))
 
+	if scene.janus_room_light_probes_active:
+		attr += [
+		("cubemap_irradiance_id","irradiance"),
+		("cubemap_radiance_id","radiance"),
+		]
+		probe_images = [(scene.janus_room_skybox_irradiance,"irradiance"), (scene.janus_room_skybox_radiance,"radiance")]
+		for sky in probe_images:
+			skyname = os.path.basename(sky[0])
+			assetimage = Tag("AssetImage", attr=[("id",sky[1]), ("src",base_path+skyname)])
+			if not assetimage in assets:
+				assets(assetimage)
+				shutil.copyfile(src=bpy.path.abspath(sky[0]), dst=os.path.join(filepath, skyname))
+		
 	if scene.janus_room_script_active:
 		script_list = [scene.janus_room_script1,scene.janus_room_script2,scene.janus_room_script3,scene.janus_room_script4]
 		for script_entry in script_list:
 			if script_entry != "":
 				scriptname = os.path.basename(script_entry)
-				assetscript = Tag("AssetScript", attr=[("src",scriptname)])
+				assetscript = Tag("AssetScript", attr=[("src",base_path+scriptname)])
 				if not assetscript in assets:
 					assets(assetscript)
 					shutil.copyfile(src=bpy.path.abspath(script_entry), dst=os.path.join(filepath, scriptname))
@@ -164,7 +183,7 @@ def write_html(scene, filepath, path_mode):
 			vertname = ""
 		if fragname:
 			attr += [("shader_id", fragname)]
-		assetshader = Tag("AssetShader", attr=[("id",fragname),("src",fragname),("vertex_src",vertname)])
+		assetshader = Tag("AssetShader", attr=[("id",fragname),("src",base_path+fragname),("vertex_src",base_path+vertname)])
 		if not assetshader in assets:
 			assets(assetshader)
 			if fragname:
@@ -243,11 +262,19 @@ def write_html(scene, filepath, path_mode):
 					if scene.janus_object_export==".obj":
 						with redirect_stdout(stdout):
 							bpy.ops.export_scene.obj(filepath=epath, use_selection=True, use_smooth_groups_bitflags=True, use_uvs=True, use_materials=True, use_mesh_modifiers=True,use_triangles=True, check_existing=False, use_normals=True, path_mode="COPY", axis_forward='-Z', axis_up='Y')
+							gzip_compress(epath, epath+'.gz')
+							os.remove(epath)
 					else:
 						with redirect_stdout(stdout):
-							bpy.ops.wm.collada_export(filepath=epath, selected=True, check_existing=False, include_uv_textures=True, include_material_textures=True)
+							#bpy.ops.wm.collada_export(filepath=epath, selected=True, check_existing=False, include_uv_textures=True, include_material_textures=True)
 							# TODO differentiate between per-object and per-mesh properties
-					ob = Tag("AssetObject", attr=[("id", o.data.name), ("src",o.data.name+scene.janus_object_export), ("mtl",o.data.name+".mtl")])
+							bpy.ops.wm.collada_export(filepath=epath, selected=True, check_existing=False, export_texture_type_selection='mat')
+							gzip_compress(epath, epath+'.gz')
+							os.remove(epath)
+					if scene.janus_object_export==".obj":
+						ob = Tag("AssetObject", attr=[("id", o.data.name), ("src",base_path+o.data.name+scene.janus_object_export+'.gz'), ("mtl",base_path+o.data.name+".mtl")])
+					else:
+						ob = Tag("AssetObject", attr=[("id", o.data.name), ("src",base_path+o.data.name+scene.janus_object_export+'.gz')])
 					exportedmeshes.append(o.data.name)
 					assets(ob)
 
@@ -287,7 +314,7 @@ def write_html(scene, filepath, path_mode):
 					else:
 						vertname = ""
 					if fragname:
-						assetshader = Tag("AssetShader", attr=[("id",fragname),("src",fragname),("vertex_src",vertname)])
+						assetshader = Tag("AssetShader", attr=[("id",fragname),("src",base_path+fragname),("vertex_src",base_path+vertname)])
 						if not assetshader in assets:
 								assets(assetshader)
 								shutil.copyfile(src=bpy.path.abspath(o.janus_object_shader_frag), dst=os.path.join(filepath, fragname))
@@ -335,7 +362,7 @@ def write_html(scene, filepath, path_mode):
 
 			if o.janus_object_sound:
 				name = os.path.basename(o.janus_object_sound)
-				assetsound = Tag("AssetSound", attr=[("id", name), ("src",name)])
+				assetsound = Tag("AssetSound", attr=[("id", name), ("src",base_path+name)])
 				if not assetsound in assets:
 					assets(assetsound)
 					shutil.copyfile(src=bpy.path.abspath(o.janus_object_sound), dst=os.path.join(filepath, name))
@@ -356,5 +383,5 @@ def write_html(scene, filepath, path_mode):
 	doc.write(fw, indent="")
 	file.close()
 
-def save(operator, context, filepath="", path_mode="AUTO", relpath=""):
-	write_html(context.scene, filepath, path_mode)
+def save(operator, context, filepath="", path_mode="AUTO", relpath="", base_path=''):
+	write_html(context.scene, filepath, path_mode, base_path=base_path)
