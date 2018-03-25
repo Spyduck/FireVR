@@ -1,11 +1,11 @@
 bl_info = {
 	"name" : "FireVR",
-	"author" : "void",
+	"author" : "void4",
 	"version" : (0, 1),
 	"blender" : (2, 75, 0),
 	"location" : "View3D > Toolshelf > Misc",
-	"description": "Exports the scene into FireBox HTML and publishes it to IPFS",
-	"wiki_url" : "https://github.com/void4/FireVR",
+	"description": "Exports the scene into FireBox HTML and publishes it to IPFS or Vesta",
+	"wiki_url" : "https://github.com/Spyduck/FireVR",
 	"category" : "Import-Export"
 }
 
