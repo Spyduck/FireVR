@@ -10,7 +10,7 @@ bl_info = {
 }
 
 import importlib
-
+import requests, json, webbrowser, tarfile
 if "bpy" in locals():
 	if "ipfsvr_export" in locals():
 		importlib.reload(ipfsvr_export)
@@ -56,6 +56,7 @@ from . import vr_export, vr_import
 
 Scene.roomhash = StringProperty(name="", default="")
 
+vesta_base_url = 'https://vesta.janusvr.com'
 class ToolPanel(Panel):
 	bl_label = "Firebox"
 	bl_space_type = "VIEW_3D"
@@ -82,6 +83,20 @@ Scene.janus_apply_scale = BoolProperty(name="Apply Scale", default=False)
 Scene.janus_apply_pos = BoolProperty(name="Apply Position", default=False)
 Scene.janus_unpack = BoolProperty(name="Unpack Textures", default=True)
 
+class VestaSettingsPanel(Panel):
+	bl_label = "VESTA Export"
+	bl_space_type = "VIEW_3D"
+	bl_region_type = "TOOLS"
+
+	def draw(self, context):
+		self.layout.label("Exports directly to Vesta.")
+		self.layout.label("https://vesta.janusvr.com")
+		self.layout.label("Save before use.")
+		self.layout.operator("vesta.get_token")
+		col = self.layout.column()
+		col.prop(context.scene, "vesta_token")
+		self.layout.operator("export_scene.vesta")
+
 class ExportSettingsPanel(Panel):
 	bl_label = "Export Settings"
 	bl_space_type = "VIEW_3D"
@@ -101,6 +116,7 @@ class ExportSettingsPanel(Panel):
 		self.layout.prop(context.scene, "janus_unpack")
 
 Scene.janus_importpath = StringProperty(name="importpath", description="Specify the html page that includes the FireBoxHTML source", subtype="FILE_PATH", default="http://vesta.janusvr.com/kityandtom/freedome")
+Scene.vesta_token = StringProperty(name="login token", description="Specify your token to authenticate with Vesta", default="")
 
 class ImportSettingsPanel(Panel):
 	bl_label = "Import Settings"
@@ -164,54 +180,56 @@ class ObjectPanel(Panel):
 	bl_region_type = "TOOLS"
 
 	def draw(self, context):
+		if context.object is None:
+			print(context)
+		if context.object is not None:
+			if context.object.type == "MESH":
+				self.layout.prop(context.object, "janus_object_objtype")
+				if context.object.janus_object_objtype != "JOT_NONE":
+					self.layout.prop(context.object, "janus_object_jsid")
+				if context.object.janus_object_objtype == "JOT_OBJECT":
+					self.layout.prop(context.scene, "janus_object_export")
+					self.layout.prop(context.object, "janus_object_collision")
+					self.layout.prop(context.object, "janus_object_locked")
+					self.layout.prop(context.object, "janus_object_lighting")
+					self.layout.prop(context.object, "janus_object_visible")
+					if context.object.janus_object_visible:
+						self.layout.prop(context.object, "janus_object_color_active")
+						if context.object.janus_object_color_active:
+							self.layout.prop(context.object, "janus_object_color")
 
-		if context.object.type == "MESH":
-			self.layout.prop(context.object, "janus_object_objtype")
-			if context.object.janus_object_objtype != "JOT_NONE":
+					self.layout.prop(context.object, "janus_object_websurface")
+					if context.object.janus_object_websurface:
+						self.layout.prop(context.object, "janus_object_websurface_url")
+						self.layout.label("Width & Height")
+						self.layout.prop(context.object, "janus_object_websurface_size")
+
+					self.layout.label("Cull Face")
+					self.layout.prop(context.object, "janus_object_cullface")
+
+					self.layout.prop(context.object, "janus_object_shader_active")
+					if context.object.janus_object_shader_active:
+						self.layout.prop(context.object, "janus_object_shader_frag")
+						self.layout.prop(context.object, "janus_object_shader_vert")
+				elif context.object.janus_object_objtype == "JOT_LINK":
+					self.layout.label("Use a standard plane,")
+					self.layout.label(" and adjust the transform.")
+					self.layout.label("(Don't edit the mesh itself)")
+					self.layout.prop(context.object, "janus_object_link_name")
+					self.layout.prop(context.object, "janus_object_link_url")
+					self.layout.prop(context.object, "janus_object_active")
+
+			elif context.object.type=="SPEAKER":
+				self.layout.prop(context.object, "janus_object_sound")
 				self.layout.prop(context.object, "janus_object_jsid")
-			if context.object.janus_object_objtype == "JOT_OBJECT":
-				self.layout.prop(context.scene, "janus_object_export")
-				self.layout.prop(context.object, "janus_object_collision")
-				self.layout.prop(context.object, "janus_object_locked")
-				self.layout.prop(context.object, "janus_object_lighting")
-				self.layout.prop(context.object, "janus_object_visible")
-				if context.object.janus_object_visible:
-					self.layout.prop(context.object, "janus_object_color_active")
-					if context.object.janus_object_color_active:
-						self.layout.prop(context.object, "janus_object_color")
+				self.layout.prop(context.object, "janus_object_sound_dist")
+				self.layout.label("XY1")
+				self.layout.prop(context.object, "janus_object_sound_xy1")
+				self.layout.label("XY2")
+				self.layout.prop(context.object, "janus_object_sound_xy2")
 
-				self.layout.prop(context.object, "janus_object_websurface")
-				if context.object.janus_object_websurface:
-					self.layout.prop(context.object, "janus_object_websurface_url")
-					self.layout.label("Width & Height")
-					self.layout.prop(context.object, "janus_object_websurface_size")
-
-				self.layout.label("Cull Face")
-				self.layout.prop(context.object, "janus_object_cullface")
-
-				self.layout.prop(context.object, "janus_object_shader_active")
-				if context.object.janus_object_shader_active:
-					self.layout.prop(context.object, "janus_object_shader_frag")
-					self.layout.prop(context.object, "janus_object_shader_vert")
-			elif context.object.janus_object_objtype == "JOT_LINK":
-				self.layout.label("Use a standard plane,")
-				self.layout.label(" and adjust the transform.")
-				self.layout.label("(Don't edit the mesh itself)")
-				self.layout.prop(context.object, "janus_object_link_name")
-				self.layout.prop(context.object, "janus_object_link_url")
-				self.layout.prop(context.object, "janus_object_active")
-
-		elif context.object.type=="SPEAKER":
-			self.layout.prop(context.object, "janus_object_sound")
-			self.layout.prop(context.object, "janus_object_jsid")
-			self.layout.prop(context.object, "janus_object_sound_dist")
-			self.layout.label("XY1")
-			self.layout.prop(context.object, "janus_object_sound_xy1")
-			self.layout.label("XY2")
-			self.layout.prop(context.object, "janus_object_sound_xy2")
-
-			self.layout.prop(context.object, "janus_object_sound_loop")
-			self.layout.prop(context.object, "janus_object_sound_once")
+				self.layout.prop(context.object, "janus_object_sound_loop")
+				self.layout.prop(context.object, "janus_object_sound_once")
 
 rooms = ["room_plane", "None", "room1", "room2", "room3", "room4", "room5", "room6", "room_1pedestal", "room_2pedestal", "room_3_narrow", "room_3_wide", "room_4_narrow", "room_4_wide", "room_box_small", "room_box_medium", "room1_new"]
 roomlist = tuple(tuple([room, room, room]) for room in rooms)
@@ -220,12 +238,16 @@ Scene.janus_room_color = FloatVectorProperty(name="Color", default=(1.0,1.0,1.0)
 Scene.janus_room_visible = BoolProperty(name="Visible", default=False)
 
 Scene.janus_room_skybox_active = BoolProperty(name="Select Skybox Images", default=False)
+Scene.janus_room_light_probes_active = BoolProperty(name="Select Lighting Probes", default=False)
 Scene.janus_room_skybox_left = StringProperty(name="Skybox Left", subtype="FILE_PATH")
 Scene.janus_room_skybox_right = StringProperty(name="Skybox Right", subtype="FILE_PATH")
 Scene.janus_room_skybox_front = StringProperty(name="Skybox Front", subtype="FILE_PATH")
 Scene.janus_room_skybox_back = StringProperty(name="Skybox Back", subtype="FILE_PATH")
 Scene.janus_room_skybox_up = StringProperty(name="Skybox Up", subtype="FILE_PATH")
 Scene.janus_room_skybox_down = StringProperty(name="Skybox Down", subtype="FILE_PATH")
+
+Scene.janus_room_skybox_irradiance = StringProperty(name="Irradiance Map (.dds)", subtype="FILE_PATH")
+Scene.janus_room_skybox_radiance = StringProperty(name="Radiance Map (.dds)", subtype="FILE_PATH")
 
 Scene.janus_room_gravity = FloatProperty(name="Gravity", default=-9.8, min=-100, max=100)
 Scene.janus_room_walkspeed = FloatProperty(name="Walk Speed", default=1.8, min=-100, max=100)
@@ -279,7 +301,12 @@ class RoomPanel(Panel):
 			self.layout.prop(context.scene, "janus_room_skybox_back")
 			self.layout.prop(context.scene, "janus_room_skybox_up")
 			self.layout.prop(context.scene, "janus_room_skybox_down")
-
+		
+		self.layout.prop(context.scene, "janus_room_light_probes_active")
+		if context.scene.janus_room_light_probes_active:
+			self.layout.prop(context.scene, "janus_room_skybox_irradiance")
+			self.layout.prop(context.scene, "janus_room_skybox_radiance")
+		
 		self.layout.prop(context.scene, "janus_room_gravity")
 		self.layout.prop(context.scene, "janus_room_walkspeed")
 		self.layout.prop(context.scene, "janus_room_runspeed")
@@ -322,7 +349,7 @@ class RoomPanel(Panel):
 		self.layout.prop(context.scene, "janus_room_locked")
 
 Scene.janus_server_default = BoolProperty(name="Default Server", default=True)
-Scene.janus_server = StringProperty(name="", default="babylon.vrsites.com")
+Scene.janus_server = StringProperty(name="", default="presence.janusvr.com")
 Scene.janus_server_port = IntProperty(name="Port", default=5567, min=0, max=2**16-1)
 
 class ServerPanel(Panel):
@@ -430,6 +457,15 @@ class VRJanusPath(Operator, ExportHelper, AddonPreferences):
 
 		return {"FINISHED"}
 
+class VestaGetToken(Operator):
+	bl_idname = "vesta.get_token"
+	bl_label = "Request VESTA login token"
+	bl_options = {"PRESET", "UNDO"}
+	vesta_login_url = vesta_base_url+'/login/authorize?service=firevr-uploader'
+	def execute(self, context):
+		webbrowser.open(self.vesta_login_url, new=1, autoraise=True)
+		return {"FINISHED"}
+
 class VRImport(Operator):
 	bl_idname = "import_scene.html"
 	bl_label = "Import FireBoxHTML"
@@ -466,6 +502,65 @@ class VRExport(Operator):
 			self.report({"INFO"}, "Exported files to %s" % filepath)
 		else:
 			self.report({"ERROR"}, "Invalid export path")
+		return {"FINISHED"}
+
+class VRExportVesta(Operator):
+	bl_idname = "export_scene.vesta"
+	bl_label = "Export to VESTA"
+	bl_options = {"PRESET", "UNDO"}
+	vesta_upload_url = vesta_base_url+'/upload'
+	vesta_create_url = vesta_base_url+'/create/submit'
+	vesta_api_filepath = vesta_base_url+'/api/get_files_path'
+	def execute(self, context):
+		exportpath = getv(context, "exportpath")
+		vesta_token = context.scene.vesta_token
+		if exportpath and vesta_token:
+			if len(vesta_token) != 32:				
+				timestamp = time.strftime("%Y%m%d%H%M%S")
+				timestamp2 = time.strftime("%Y/%m/%d - %H:%M:%S")
+				online_path = ''
+				r = requests.get(self.vesta_api_filepath, params={'token':vesta_token})
+				if r.status_code == requests.codes.ok:
+					online_path = r.text+'firevr/'
+				else:
+					self.report({"ERROR"}, "Can't get data from API. Invalid VESTA token?")
+					return {"FINISHED"}
+				filepath = os.path.join(exportpath, timestamp)
+				os.makedirs(filepath, exist_ok=True)
+				vr_export.save(self, context, filepath=filepath, base_path=online_path+timestamp+'/')
+				setv(context, "filepath", filepath)
+				self.report({"INFO"}, "Exported files to %s" % filepath)
+				self.report({"INFO"}, 'Uploading, this may take a while.')
+				files = [f for f in os.listdir(filepath) if os.path.isfile(os.path.join(filepath, f))]
+				with tarfile.open(os.path.join(filepath,'vesta_'+timestamp+'.tar.gz'), "w:gz") as tar:
+					for file in files:
+						if not file.endswith('.tar.gz'):
+							tar.add(os.path.join(filepath, file), arcname=file)
+				files = {'file': open(os.path.join(filepath, 'vesta_'+timestamp+'.tar.gz'), 'rb')}
+				r = requests.post(self.vesta_upload_url, files=files, data={'token':vesta_token, 'path':'firevr/'+timestamp})
+				if r.status_code == requests.codes.ok:
+					index_contents = ''
+					with open(os.path.join(filepath, 'index.html'),'rb') as f_index:
+						index_contents = str(f_index.read(), 'utf-8')
+					data = {'token':vesta_token, 'public':False, 'nsfw':False, 'can_fork':False, 'sandbox':False, 'firebox':index_contents, 'body':'Exported from Blender using the FireVR exporter. Get it at https://github.com/Spyduck/FireVR', 'room_name':'FireVR Export ('+timestamp2+')', 'id':'create'}
+					r = requests.post(self.vesta_create_url, data=json.dumps(data))
+					if r.status_code == requests.codes.ok:
+						if r.json().get('error') == False:
+							redirect = r.json().get('redirect')
+							self.report({"INFO"}, redirect)
+							webbrowser.open(vesta_base_url+redirect+'/edit', new=1, autoraise=True)
+						else:
+							self.report({"ERROR"}, 'Error from VESTA: '+str(r.json().get('message',None)))
+					else:
+						self.report({"ERROR"}, str(r.status_code))
+				else:
+					self.report({"ERROR"}, str(r.status_code))
+			else:
+				self.report({"ERROR"}, "Invalid VESTA token")
+		elif not exportpath:
+			self.report({"ERROR"}, "Invalid export path")
+		else:
+			self.report({"ERROR"}, "Invalid VESTA token")
 		return {"FINISHED"}
 
 def getURL(context, hashes):
@@ -511,11 +606,13 @@ class VRJanus(Operator):
 			args.append(str(context.scene.janus_size[1]))
 
 		args += ["render", context.scene.janus_rendermode]
+		if context.scene.janus_rendermode == '2d':
+			args += ["mode", context.scene.janus_rendermode]
 		args += ["rate", str(context.scene.janus_updaterate)]
 
 		if not context.scene.janus_ipfs:
 			filepath = os.path.join(filepath, "index.html")
-
+			print(filepath)
 		januspath = hasv(context, "januspath")
 		if januspath:
 			params = {}
@@ -524,7 +621,7 @@ class VRJanus(Operator):
 			if context.scene.janus_ipfs:
 				subprocess.Popen([januspath]+args+[gateway], close_fds=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 			else:
-				subprocess.Popen([januspath]+args+[filepath])
+				subprocess.Popen([januspath]+args+['file:///'+filepath])
 		else:
 			self.report({"ERROR"}, "JanusVR path not set")
 		return {"FINISHED"}
