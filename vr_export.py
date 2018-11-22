@@ -268,7 +268,7 @@ def write_html(scene, filepath, path_mode, base_path=''):
 						with redirect_stdout(stdout):
 							#bpy.ops.wm.collada_export(filepath=epath, selected=True, check_existing=False, include_uv_textures=True, include_material_textures=True)
 							# TODO differentiate between per-object and per-mesh properties
-							bpy.ops.wm.collada_export(filepath=epath, selected=True, check_existing=False, export_texture_type_selection='mat')
+							bpy.ops.wm.collada_export(filepath=epath, selected=True, check_existing=False, export_texture_type_selection='mat', apply_modifiers=True)
 							gzip_compress(epath, epath+'.gz')
 							os.remove(epath)
 					if scene.janus_object_export==".obj":
@@ -368,7 +368,12 @@ def write_html(scene, filepath, path_mode, base_path=''):
 					shutil.copyfile(src=bpy.path.abspath(o.janus_object_sound), dst=os.path.join(filepath, name))
 				sound = Tag("Sound", attr=[("id", name), ("js_id", o.janus_object_jsid), ("pos", p2s(o.location)), ("dist", f2s(o.janus_object_sound_dist)), ("rect", v2s(list(o.janus_object_sound_xy1)+list(o.janus_object_sound_xy2))), ("loop", b2s(o.janus_object_sound_loop)), ("play_once", b2s(o.janus_object_sound_once))])
 				room(sound)
-
+		elif o.type == 'LAMP':
+			print(o.data.distance)
+			print(o.janus_object_jsid)
+			light = Tag("Light", attr=[("js_id", o.janus_object_jsid), ("col", v2s(o.data.color[:3])), ("pos", p2s(o.location)), ("light_range", f2s(o.data.distance*2.0)), ("light_exponent", f2s(o.data.distance)), ("light_intensity", f2s(o.data.energy*5.0)) ])
+			room(light)
+		
 	for so in bpy.context.selected_objects:
 		so.select = False
 	for so in userselect:

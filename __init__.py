@@ -621,7 +621,7 @@ class VRJanus(Operator):
 			if context.scene.janus_ipfs:
 				subprocess.Popen([januspath]+args+[gateway], close_fds=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 			else:
-				subprocess.Popen([januspath]+args+['file:///'+filepath])
+				subprocess.Popen([januspath]+args+['file:///'+filepath.replace('\\','/')])
 		else:
 			self.report({"ERROR"}, "JanusVR path not set")
 		return {"FINISHED"}
