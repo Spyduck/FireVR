@@ -83,18 +83,23 @@ Scene.janus_apply_scale = BoolProperty(name="Apply Scale", default=False)
 Scene.janus_apply_pos = BoolProperty(name="Apply Position", default=False)
 Scene.janus_unpack = BoolProperty(name="Unpack Textures", default=True)
 
+def update_vesta_token(self,context):
+	setv(context, "vestatoken", self.vestatoken)
+ 
 class VestaSettingsPanel(Panel):
 	bl_label = "VESTA Export"
 	bl_space_type = "VIEW_3D"
 	bl_region_type = "TOOLS"
 
+	vestatoken = None
 	def draw(self, context):
 		self.layout.label("Exports directly to Vesta.")
 		self.layout.label("https://vesta.janusvr.com")
 		self.layout.label("Save before use.")
 		self.layout.operator("vesta.get_token")
 		col = self.layout.column()
-		col.prop(context.scene, "vesta_token")
+		self.vestatoken = getv(bpy.context, "vestatoken") or ''
+		col.prop(bpy.context.user_preferences.addons[__name__].preferences, "vestatoken")
 		self.layout.operator("export_scene.vesta")
 
 class ExportSettingsPanel(Panel):
@@ -116,7 +121,7 @@ class ExportSettingsPanel(Panel):
 		self.layout.prop(context.scene, "janus_unpack")
 
 Scene.janus_importpath = StringProperty(name="importpath", description="Specify the html page that includes the FireBoxHTML source", subtype="FILE_PATH", default="http://vesta.janusvr.com/kityandtom/freedome")
-Scene.vesta_token = StringProperty(name="login token", description="Specify your token to authenticate with Vesta", default="")
+#Scene.vesta_token = StringProperty(name="login token", description="Specify your token to authenticate with Vesta", default="")
 
 class ImportSettingsPanel(Panel):
 	bl_label = "Import Settings"
@@ -466,6 +471,15 @@ class VestaGetToken(Operator):
 		webbrowser.open(self.vesta_login_url, new=1, autoraise=True)
 		return {"FINISHED"}
 
+class VestaToken(AddonPreferences):
+	bl_idname = __name__
+	
+	vestatoken = StringProperty(name="login token", description="Specify your token to authenticate with Vesta", default="", update=update_vesta_token)
+	#vestatoken = StringProperty(default='')
+	def draw(self, context):
+		layout = self.layout
+		layout.prop(self, "vestatoken")
+
 class VRImport(Operator):
 	bl_idname = "import_scene.html"
 	bl_label = "Import FireBoxHTML"
@@ -513,7 +527,8 @@ class VRExportVesta(Operator):
 	vesta_api_filepath = vesta_base_url+'/api/get_files_path'
 	def execute(self, context):
 		exportpath = getv(context, "exportpath")
-		vesta_token = context.scene.vesta_token
+		#vesta_token = context.scene.vesta_token
+		vesta_token = getv(context, 'vestatoken')
 		if exportpath and vesta_token:
 			if len(vesta_token) != 32:				
 				timestamp = time.strftime("%Y%m%d%H%M%S")
@@ -647,7 +662,9 @@ def register():
 	bpy.utils.register_module(__name__)
 	if getv(bpy.context, "exportpath") is None:
 		setv(bpy.context, "exportpath", "jvr")
-
+	if getv(bpy.context, "vestatoken") is None:
+		setv(bpy.context, "vestatoken", "")
+	
 def unregister():
 	global custom_icons
 	bpy.utils.previews.remove(custom_icons)
