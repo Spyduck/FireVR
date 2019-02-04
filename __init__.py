@@ -154,8 +154,10 @@ class RunSettingsPanel(Panel):
 		if not context.scene.janus_fullscreen:
 			self.layout.label(text="Window size")
 			self.layout.prop(context.scene, "janus_size")
-
-Scene.janus_object_export = EnumProperty(name="", default=".obj", items=((".obj", "Wavefront (.obj)", "Wavefront object files"),(".dae", "Collada (.dae)", "Collada files")))
+if bpy.app.version < (2, 80):
+	Scene.janus_object_export = EnumProperty(name="", default=".obj", items=((".obj", "Wavefront (.obj)", "Wavefront object files"),(".dae", "Collada (.dae)", "Collada files")))
+else:
+	Scene.janus_object_export = EnumProperty(name="", default=".obj", items=((".obj", "Wavefront (.obj)", "Wavefront object files"),(".dae", "Collada (.dae)", "Collada files"),('.gltf', 'glTF 2.0 (.gltf)', 'glTF 2.0 files')))
 Object.janus_object_jsid = StringProperty(name="js_id", default="")
 Object.janus_object_objtype = EnumProperty(name="", default="JOT_OBJECT", items=(("JOT_NONE", "No Export", "Don't export this object."), ("JOT_OBJECT", "Object (model)", "<Object>"), ("JOT_LINK", "Link (portal)", "<Link>")))
 Object.janus_object_link_name = StringProperty(name="Link Name", default="")

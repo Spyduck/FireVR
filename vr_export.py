@@ -288,18 +288,23 @@ def write_html(scene, filepath, path_mode, base_path=''):
 
 				if not o.data.name in exportedmeshes:
 					epath = os.path.join(filepath, o.data.name+scene.janus_object_export)
-					if scene.janus_object_export==".obj":
+					if scene.janus_object_export == '.obj':
 						with redirect_stdout(stdout):
 							bpy.ops.export_scene.obj(filepath=epath, use_selection=True, use_smooth_groups_bitflags=True, use_uvs=True, use_materials=True, use_mesh_modifiers=True,use_triangles=True, check_existing=False, use_normals=True, path_mode="COPY", axis_forward='-Z', axis_up='Y')
 							gzip_compress(epath, epath+'.gz')
 							os.remove(epath)
-					else:
+					elif scene.janus_object_export == '.dae':
 						with redirect_stdout(stdout):
 							# TODO differentiate between per-object and per-mesh properties
 							if bpy.app.version < (2, 80):
 								bpy.ops.wm.collada_export(filepath=epath, selected=True, check_existing=False, export_texture_type_selection='mat', apply_modifiers=True)
 							else:
 								bpy.ops.wm.collada_export(filepath=epath, selected=True, check_existing=False, apply_modifiers=True)
+							gzip_compress(epath, epath+'.gz')
+							os.remove(epath)
+					elif scene.janus_object_export == '.gltf':
+						with redirect_stdout(stdout):
+							bpy.ops.export_scene.gltf(export_format='GLTF_EMBEDDED', export_selected=True, export_apply=True, filepath=epath)
 							gzip_compress(epath, epath+'.gz')
 							os.remove(epath)
 					if scene.janus_object_export==".obj":
