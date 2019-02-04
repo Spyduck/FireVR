@@ -3,12 +3,16 @@ import os
 import urllib.request as urlreq
 import gzip
 import bpy
-from mathutils import Vector, Matrix
+from mathutils import Vector, Matrix, Euler
 from math import radians
 import re
 import bs4
 import traceback
-
+import sys
+from hashlib import md5 as hashlib_md5
+current_module = sys.modules[__name__]
+primitive_path = 'file:///'+os.path.join(os.path.dirname(current_module.__file__), 'primitives')
+primitives = ['capsule', 'cone', 'cube', 'cylinder', 'pipe', 'plane', 'pyramid', 'sphere', 'torus']
 def s2v(s):
 	try:
 		return [float(c) for c in s.split(" ")]
@@ -25,8 +29,9 @@ def s2lp(s):
 
 def fromFwd(zdir):
 	ydir = [0,1,0]
-	#xdir = Vector(zdir).cross(Vector(ydir))
 	xdir = Vector(ydir).cross(Vector(zdir))
+	zdir = (zdir[0], zdir[2], zdir[1])
+	ydir = [0,0,1]
 	mtrx = Matrix([xdir, zdir, ydir])
 	return mtrx
 
@@ -58,6 +63,8 @@ class AssetObjectObj:
 
 	def abs_source(self, base, path):
 		base = rel2abs(self.basepath, base)
+		if path.startswith("file:///"):
+			path = path
 		if path.startswith("./"):
 			path = path[2:]
 		if path.startswith("/") or path.startswith("http://") or path.startswith("https://"):
@@ -67,47 +74,70 @@ class AssetObjectObj:
 		if base.startswith("http://") or base.startswith("https://"):
 			return os.path.join(base, path).replace('\\','/')
 		return os.path.join(base, path).replace('\\','/')
-
-	def abs_target(self, path):
+	
+	def md5(self, url):
+		m = hashlib_md5()
+		m.update(url.encode('utf-8'))
+		return m.hexdigest()
+	
+	def abs_target(self, path, source=None):
+		if source:
+			name, ext = os.path.splitext(os.path.basename(path))
+			if ext == '.gz':
+				_, ext = os.path.splitext(os.path.basename(name))
+				ext += '.gz'
+				
+			print('ext', ext)
+			return os.path.join(self.workingpath, self.md5(source)+ext)
 		return os.path.join(self.workingpath, os.path.basename(path))
 
 	# Moves resources to the working directory
 	def retrieve(self, path, base=None):
+		exists = True
 		if base is None:
 			base = self.basepath
+		if path.startswith('file:///'):
+			return os.path.abspath(path[8:]), exists
 		source = self.abs_source(base, path)
-		print('Retrieving '+source)
-		target = self.abs_target(path)
-		try:
-			urlreq.urlretrieve(source, target)
-		except:
-		
-			print('Error getting '+source)
-			print(traceback.format_exc())
+		target = self.abs_target(path, source=source)
+		if not os.path.exists(os.path.abspath(target)):
+			exists = False
+			print('Retrieving '+source, 'to', target)
+			try:
+				urlreq.urlretrieve(source, target)
+			except:
+				print('Error getting '+source)
+				print(traceback.format_exc())
+				return '', exists
+		else:
+			print('Reusing '+source, 'as', target)
 		if path.endswith(".gz"):
-			with gzip.open(target, 'rb') as infile:
-				with open(target[:-3], 'wb') as outfile:
-					outfile.write(infile.read())
+			if not os.path.exists(target[:-3]):
+				exists = False
+				with gzip.open(target, 'rb') as infile:
+					with open(target[:-3], 'wb') as outfile:
+						outfile.write(infile.read())
 
-			return target[:-3]
-		return target
+			return target[:-3], exists
+		return target, exists
 
 	def load(self):
 
 		if self.loaded:
 			return
-
+		self.orig_src = self.abs_source(self.basepath, self.src)
 		if self.src is not None:
-			self.src = self.retrieve(self.src)
+			self.src, _ = self.retrieve(self.src)
+			exists = False
 			if self.mtl is None:
-				print('NO MTL SET, GETTING FROM '+self.src)
+				#print('NO MTL SET, GETTING FROM '+self.src)
 				with open(self.src,'r') as f:
 					mtllib = re.search(r"mtllib (.*?)$", f.read(), re.MULTILINE)
 					if mtllib:
 						try:
 							self.mtl_basepath = self.abs_source( os.path.dirname(self.abs_source(self.basepath, self.tag["src"])), mtllib.group(1))
-							print('basepath '+self.mtl_basepath)
-							self.mtl = self.retrieve(self.mtl_basepath)
+							#print('basepath '+self.mtl_basepath)
+							self.mtl, exists = self.retrieve(self.mtl_basepath)
 						except Exception as e:
 							print(e)
 							self.mtl = None
@@ -117,42 +147,49 @@ class AssetObjectObj:
 					mtlpath = os.path.dirname(self.mtl_basepath)
 				else:
 					mtlpath = os.path.dirname(self.abs_source(self.basepath,self.mtl))
-				print('mtlpath '+mtlpath)
-				self.mtl = self.retrieve(self.mtl)
+				#print('mtlpath '+mtlpath)
+				src_mtl = self.mtl
+				if not exists:
+					self.mtl, exists = self.retrieve(self.mtl)
 				#print(self.mtl)
 				imgfiles = []
-				with open(self.mtl, "r") as mtlfile:
-					#imgfiles = re.findall(r"\b\w*\.(?:jpg|gif|png)", mtlfile.read())
-					imgfiles = re.findall(r"((\S*?)\.(?:jpg|jpeg|gif|png))", mtlfile.read())
-				
-				for imgfile in imgfiles:
-					if imgfile[0] not in self.downloaded_imgfiles:
-						self.downloaded_imgfiles[imgfile[0]] = self.retrieve(imgfile[0], mtlpath)
-						print(imgfile[0])
+				if os.path.exists(self.mtl) and not exists:
+						
+					with open(self.mtl, "r") as mtlfile:
+						#imgfiles = re.findall(r"\b\w*\.(?:jpg|gif|png)", mtlfile.read())
+						imgfiles = re.findall(r"((\S*?)\.(?:jpg|jpeg|gif|png))", mtlfile.read())
+					
+					for imgfile in imgfiles:
+						if imgfile[0] not in self.downloaded_imgfiles:
+							if not os.path.exists(os.path.join(self.workingpath, imgfile[0])):
+								self.downloaded_imgfiles[imgfile[0]], _ = self.retrieve(imgfile[0], mtlpath)
+								print('self.downloaded_imgfiles[imgfile[0]]', self.downloaded_imgfiles[imgfile[0]])
 
-				# rewrite mtl to point to local file
-				with open(self.abs_target(self.mtl), "r") as mtlfile:
-					file = mtlfile.read()
-				for imgfile in imgfiles:
-					file = file.replace(self.downloaded_imgfiles[imgfile[0]], os.path.basename(imgfile[0]))
-				with open(self.mtl, "w") as mtlfile:
-					mtlfile.write(file)
+					# rewrite mtl to point to local file
+					with open(self.abs_target(self.mtl, source=src_mtl), "r") as mtlfile:
+						file = mtlfile.read()
+					for imgfile in imgfiles:
+						#file = file.replace(self.downloaded_imgfiles[imgfile[0]], os.path.basename(imgfile[0]))
+						file = file.replace(imgfile[0], os.path.basename(self.downloaded_imgfiles[imgfile[0]]))
+					with open(self.mtl, "w") as mtlfile:
+						mtlfile.write(file)
 			self.loaded = True
 			print('Loaded asset.')
 	#An .obj can include multiple objects!
 	def instantiate(self, tag):
 		#print(tag)
 		if not self.imported:
+			#bpy.ops.object.select_all(action='DESELECT')
 			self.load()
 			self.imported = True
 			objects = list(bpy.data.objects)
 			if self.mtl is not None:
 				if self.mtl[:-4] != self.src[:-4]:
-					print('Rewriting obj')
+					#print('Rewriting obj')
 					# rewrite obj to use correct mtl
 					replaced = False
 					file = ""
-					with open(self.abs_target(self.src), "r") as mtlfile:
+					with open(self.abs_target(self.src, source=self.orig_src), "r") as mtlfile:
 						for line in mtlfile.read().split('\n'):
 							if line[:6] == 'mtllib':
 								file = file + 'mtllib ' + os.path.basename(self.mtl) + '\n'
@@ -163,14 +200,17 @@ class AssetObjectObj:
 							file = 'mtllib ' + os.path.basename(self.mtl) + '\n' + file
 					with open(self.abs_target(self.src[:-4]+"_"+os.path.basename(self.mtl[:-4])+".obj"), "w") as mtlfile:
 						mtlfile.write(file)
-					bpy.ops.import_scene.obj(filepath=self.src[:-4]+"_"+os.path.basename(self.mtl[:-4])+".obj", axis_up="Y", axis_forward="Z")
+					bpy.ops.import_scene.obj(filepath=self.src[:-4]+"_"+os.path.basename(self.mtl[:-4])+".obj", axis_up="Y", axis_forward="-Z")
 				else:
-					bpy.ops.import_scene.obj(filepath=self.src, axis_up="Y", axis_forward="Z")
+					bpy.ops.import_scene.obj(filepath=self.src, axis_up="Y", axis_forward="-Z")
 			else:
-				bpy.ops.import_scene.obj(filepath=self.src, axis_up="Y", axis_forward="Z")
+				bpy.ops.import_scene.obj(filepath=self.src, axis_up="Y", axis_forward="-Z")
+			bpy.ops.object.transform_apply(location = True, scale = True, rotation = True)
 			self.objects = [o for o in list(bpy.data.objects) if o not in objects]
 			obj = bpy.context.selected_objects[0]
 			obj.name = self.id
+			print('self.objects', self.objects)
+			#self.objects = bpy.context.selected_objects
 		else:
 			newobj = []
 			for obj in self.objects:
@@ -180,30 +220,21 @@ class AssetObjectObj:
 				newobj.append(bpy.context.selected_objects[0])
 			self.objects = newobj
 
-		print(self.objects)
 		for obj in self.objects:
-			obj.scale = s2v(tag.attrs.get("scale", "1 1 1"))
-
+			scale = s2v(tag.attrs.get("scale", "1 1 1"))
+			obj.scale = (scale[0], scale[2], scale[1])
 			if "xdir" in tag.attrs or "ydir" in tag.attrs or "zdir" in tag.attrs:
-				#obj.rotation_euler = (Matrix([s2v(tag.attrs.get("xdir", "1 0 0")), neg(s2v(tag.attrs.get("zdir", "0 0 1"))), s2v(tag.attrs.get("ydir", "0 1 0"))])).to_euler()
 				xdir = s2v(tag.attrs.get("xdir", "1 0 0"))
 				ydir = s2v(tag.attrs.get("ydir", "0 1 0"))
 				zdir = s2v(tag.attrs.get("zdir", "0 0 1"))
-				'''
-				if xdir[0] == zdir[2]:
-					zdir[2] = -zdir[2]
-				if xdir[2] == zdir[0]:
-					zdir[0] = -zdir[0]
-				obj.rotation_euler = (Matrix([xdir, zdir, s2v(tag.attrs.get("ydir", "0 1 0"))])).to_euler()
-				'''
+				zdir = (zdir[0], zdir[2], zdir[1])
+				ydir = (ydir[0], ydir[2], ydir[1])
 				obj.rotation_euler = (Matrix([xdir, zdir, ydir])).to_euler()
-				#obj.rotation_euler = (Matrix([zdir, xdir, ydir])).to_euler()
-				#obj.rotation_euler = (Matrix([xdir, zdir, ydir])).to_euler()
-				#obj.rotation_euler = (Matrix([ydir, xdir, zdir])).to_euler()
 			else:
-				obj.rotation_euler = fromFwd(neg(s2v(tag.attrs.get("fwd", "0 0 1")))).to_euler()
+				obj.rotation_euler = fromFwd(s2v(tag.attrs.get("fwd", "0 0 1"))).to_euler()
 
-			obj.location = s2p(tag.attrs.get("pos", "0 0 0"))
+			location = s2p(tag.attrs.get("pos", "0 0 0"))
+			obj.location = location #translate(obj.location, location)
 		return list(self.objects)
 def read_html(operator, scene, filepath, path_mode, workingpath):
 	#FEATURE import from ipfs://
@@ -225,7 +256,7 @@ def read_html(operator, scene, filepath, path_mode, workingpath):
 		html = re.sub("(-->)", "", html.decode('utf-8'), flags=re.DOTALL).encode('utf-8')
 	soup = bs4.BeautifulSoup(html, "html.parser")
 	fireboxrooms = soup.findAll("fireboxroom")
-	print(str(len(fireboxrooms)))
+	#print(str(len(fireboxrooms)))
 
 	if len(fireboxrooms) == 0:
 		operator.report({"ERROR"}, "Could not find the FireBoxRoom tag")
@@ -266,7 +297,12 @@ def read_html(operator, scene, filepath, path_mode, workingpath):
 		operator.report({"INFO"}, "No assets found")
 		return
 
-	for asset in assets[0].findAll("assetobject"):
+	all_assets = assets[0].findAll("assetobject")
+	for primitive_id in primitives:
+		asset_src = '<AssetObject id="'+primitive_id+'" src="'+os.path.join(primitive_path, primitive_id+'.obj')+'"/>'
+		asset = bs4.BeautifulSoup(asset_src, 'html.parser').find()
+		all_assets.append(asset)
+	for asset in all_assets:
 		#dae might be different!
 		#assets with same basename will conflict (e.g. from different domains)
 		print(asset)
@@ -290,46 +326,55 @@ def read_html(operator, scene, filepath, path_mode, workingpath):
 
 	for obj in objects:
 		try:
-			asset = jassets.get(obj["id"])
+			asset = jassets.get(obj.get("id"))
 			if asset:
 				asset.instantiate(obj)
 		except:
-			pass
+			print(traceback.format_exc())
+
+def translate(vec1, vec2):
+	return (vec1[0]+vec2[0], vec1[1]+vec2[1], vec1[2]+vec2[2])
+def multiply(vec1, vec2):
+	return (vec1[0]*vec2[0], vec1[1]*vec2[1], vec1[2]*vec2[2])
 
 class AssetObjectDae(AssetObjectObj):
 	#An .obj can include multiple objects!
 	def instantiate(self, tag):
-		print(tag)
+		#print(tag)
 		self.load()
 		if not self.imported:
+			before = len(bpy.data.objects)
 			self.imported = True
-			objects = list(bpy.data.objects)
+			bpy.ops.object.select_all(action='DESELECT')
 			bpy.ops.wm.collada_import(filepath=self.src)
-			self.objects = [bpy.data.objects[0]]
+			bpy.ops.object.make_single_user(type='SELECTED_OBJECTS', object=True, obdata=True)
+			bpy.ops.object.transform_apply(location = True, scale = True, rotation = True)
+			self.objects = bpy.context.selected_objects
+			for obj in self.objects:
+				obj.name = self.id
 		else:
 			newobj = []
 			for obj in self.objects:
 				bpy.ops.object.select_all(action='DESELECT')
 				bpy.ops.object.select_pattern(pattern=obj.name)
 				bpy.ops.object.duplicate(linked=True)
-				newobj.append(bpy.context.selected_objects[0])
+				#newobj.append(bpy.context.selected_objects[0])
+				newobj.extend(bpy.context.selected_objects)
 			self.objects = newobj
 
-		print(self.objects)
 		for obj in self.objects:
-			obj.scale = s2v(tag.attrs.get("scale", "1 1 1"))
-
+			scale = s2v(tag.attrs.get("scale", "1 1 1"))
+			obj.scale = (scale[0], scale[2], scale[1])
 			if "xdir" in tag.attrs or "ydir" in tag.attrs or "zdir" in tag.attrs:
 				xdir = s2v(tag.attrs.get("xdir", "1 0 0"))
+				ydir = s2v(tag.attrs.get("ydir", "0 1 0"))
 				zdir = s2v(tag.attrs.get("zdir", "0 0 1"))
-				if xdir[0] == zdir[2]:
-					zdir[2] = -zdir[2]
-				if xdir[2] == zdir[0]:
-					zdir[0] = -zdir[0]
-				obj.rotation_euler = (Matrix([xdir, zdir, s2v(tag.attrs.get("ydir", "0 1 0"))])).to_euler()
-				
+				zdir = (zdir[0], zdir[2], zdir[1])
+				ydir = (ydir[0], ydir[2], ydir[1])
+				obj.rotation_euler = (Matrix([xdir, zdir, ydir])).to_euler()
 			else:
-				obj.rotation_euler = fromFwd(neg(s2v(tag.attrs.get("fwd", "0 0 1")))).to_euler()
+				obj.rotation_euler = fromFwd(s2v(tag.attrs.get("fwd", "0 0 1"))).to_euler()
+
 			obj.location = s2p(tag.attrs.get("pos", "0 0 0"))
 
 	def load(self):
@@ -337,11 +382,11 @@ class AssetObjectDae(AssetObjectObj):
 		if self.loaded:
 			return
 
-		if self.src is not None:
+		if self.src:
 			src_orig = self.abs_source(os.path.dirname(self.basepath+"0"), self.src)
-			print(src_orig)
-			self.src = self.retrieve(self.src)
-			self.parse_dae(self.src,src_orig)
+			self.src, exists = self.retrieve(self.src)
+			if not exists and self.src:
+				self.parse_dae(self.src,src_orig)
 			self.loaded = True
 
 	def parse_dae(self, path, dae_url):
@@ -353,11 +398,13 @@ class AssetObjectDae(AssetObjectObj):
 			m = re.search('<init_from>(.*?)\.(jpg|png|gif|bmp)</init_from>', line)
 			if m is not None:
 				img = self.abs_source(os.path.dirname(dae_url), m.group(1)+'.'+m.group(2))
-				print(img)
-				img = self.retrieve(img, os.path.dirname(self.abs_source(self.basepath, self.src)))
-				img = img[img.rfind(os.path.sep)+1:].replace('\\','/')
-				line = re.sub('<init_from>(.*?)</init_from>', '<init_from>'+img+'</init_from>', line)
-				print(line)
+				if not os.path.exists(os.path.join(self.workingpath, img)):
+					#img = self.retrieve(img, os.path.dirname(self.abs_source(self.basepath, self.src)))
+					img, _ = self.retrieve(img, os.path.dirname(self.abs_source(self.basepath, self.src)))
+					print('img', dae_url, img)
+					if img:
+						img = img[img.rfind(os.path.sep)+1:].replace('\\','/')
+					line = re.sub('<init_from>(.*?)</init_from>', '<init_from>'+img+'</init_from>', line)
 				output += line
 			else:
 				output += line

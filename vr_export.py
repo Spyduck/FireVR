@@ -35,11 +35,17 @@ def lp2s(v):
 
 # rotation to string
 def r2s(m):
-	return v2s(list(m*Vector([-1,0,0,0]))[:3])
+	if bpy.app.version < (2, 80):
+		return v2s(list(m*Vector([-1,0,0,0]))[:3])
+	else:
+		return v2s(list(m @ Vector([-1,0,0,0]))[:3])
 
 # rotation to string, room fwd edition
 def r2sr(m):
-	return v2s(list(m*Vector([0,0,-1,0]))[:3])
+	if bpy.app.version < (2, 80):
+		return v2s(list(m*Vector([0,0,-1,0]))[:3])
+	else:
+		return v2s(list(m @ Vector([0,0,-1,0]))[:3])
 
 # Insert rotation
 # Moved here from the original code in the MESH handler
@@ -56,16 +62,26 @@ def r2sr(m):
 # This one's used for text and links.
 def mt2(attr, m):
 	m = m.normalized()
-	attr += [("xdir", p2s(list(m*Vector([1,0,0,0]))[:3]))]
-	attr += [("ydir", p2s(list(m*Vector([0,1,0,0]))[:3]))]
-	attr += [("zdir", p2s(list(m*Vector([0,0,1,0]))[:3]))]
-
+	if bpy.app.version < (2, 80):
+		attr += [("xdir", p2s(list(m*Vector([1,0,0,0]))[:3]))]
+		attr += [("ydir", p2s(list(m*Vector([0,1,0,0]))[:3]))]
+		attr += [("zdir", p2s(list(m*Vector([0,0,1,0]))[:3]))]
+	else:
+		attr += [("xdir", p2s(list(m @ Vector([1,0,0,0]))[:3]))]
+		attr += [("ydir", p2s(list(m @ Vector([0,1,0,0]))[:3]))]
+		attr += [("zdir", p2s(list(m @ Vector([0,0,1,0]))[:3]))]
+	
 # Here's one that's used for models.
 def mtm(attr, m):
 	m = m.normalized()
-	attr += [("xdir", p2s(list(m*Vector([-1,0,0,0]))[:3]))]
-	attr += [("ydir", p2s(list(m*Vector([0,0,1,0]))[:3]))]
-	attr += [("zdir", p2s(list(m*Vector([0,-1,0,0]))[:3]))]
+	if bpy.app.version < (2, 80):
+		attr += [("xdir", p2s(list(m*Vector([-1,0,0,0]))[:3]))]
+		attr += [("ydir", p2s(list(m*Vector([0,0,1,0]))[:3]))]
+		attr += [("zdir", p2s(list(m*Vector([0,-1,0,0]))[:3]))]
+	else:
+		attr += [("xdir", p2s(list(m @ Vector([-1,0,0,0]))[:3]))]
+		attr += [("ydir", p2s(list(m @ Vector([0,0,1,0]))[:3]))]
+		attr += [("zdir", p2s(list(m @ Vector([0,-1,0,0]))[:3]))]
 
 def gzip_compress(in_path, out_path):
 	with open(in_path,'rb') as f_in:
@@ -193,7 +209,11 @@ def write_html(scene, filepath, path_mode, base_path=''):
 
 	room = Tag("Room", attr)
 
-	useractive = scene.objects.active
+	useractive = None
+	if bpy.app.version < (2, 80):
+		useractive = scene.objects.active
+	else:
+		bpy.context.view_layer.objects.active
 	userselect = bpy.context.selected_objects[:]
 
 	exportedmeshes = []
@@ -208,10 +228,19 @@ def write_html(scene, filepath, path_mode, base_path=''):
 		if o.type=="MESH":
 			if o.janus_object_objtype == "JOT_OBJECT":
 				# A mesh. If the user really wants us to, apply things to it.
-				scene.objects.active = o
+				if bpy.app.version < (2, 80):
+					scene.objects.active = o
+				else:
+					bpy.context.view_layer.objects.active = o
 				for so in bpy.context.selected_objects:
-					so.select = False
-				o.select = True
+					if bpy.app.version < (2, 80):
+						so.select = False
+					else:
+						so.select_set(state=False)
+				if bpy.app.version < (2, 80):
+					o.select = True
+				else:
+					o.select_set(state=True)
 
 				if scene.janus_apply_rot:
 					try:
@@ -266,9 +295,11 @@ def write_html(scene, filepath, path_mode, base_path=''):
 							os.remove(epath)
 					else:
 						with redirect_stdout(stdout):
-							#bpy.ops.wm.collada_export(filepath=epath, selected=True, check_existing=False, include_uv_textures=True, include_material_textures=True)
 							# TODO differentiate between per-object and per-mesh properties
-							bpy.ops.wm.collada_export(filepath=epath, selected=True, check_existing=False, export_texture_type_selection='mat', apply_modifiers=True)
+							if bpy.app.version < (2, 80):
+								bpy.ops.wm.collada_export(filepath=epath, selected=True, check_existing=False, export_texture_type_selection='mat', apply_modifiers=True)
+							else:
+								bpy.ops.wm.collada_export(filepath=epath, selected=True, check_existing=False, apply_modifiers=True)
 							gzip_compress(epath, epath+'.gz')
 							os.remove(epath)
 					if scene.janus_object_export==".obj":
@@ -373,12 +404,21 @@ def write_html(scene, filepath, path_mode, base_path=''):
 			print(o.janus_object_jsid)
 			light = Tag("Light", attr=[("js_id", o.janus_object_jsid), ("col", v2s(o.data.color[:3])), ("pos", p2s(o.location)), ("light_range", f2s(o.data.distance*2.0)), ("light_exponent", f2s(o.data.distance)), ("light_intensity", f2s(o.data.energy*5.0)) ])
 			room(light)
-		
-	for so in bpy.context.selected_objects:
-		so.select = False
-	for so in userselect:
-		so.select = True
-	scene.objects.active = useractive
+	
+	if bpy.app.version < (2, 80):
+		for so in bpy.context.selected_objects:
+			so.select = False
+		for so in userselect:
+			so.select = True
+		scene.objects.active = useractive
+	else:
+		for so in bpy.context.selected_objects:
+			so.select_set(state=False)
+		for so in userselect:
+			so.select_set(state=True)
+	
+
+		bpy.context.view_layer.objects.active = useractive
 
 	fire(assets)
 	fire(room)

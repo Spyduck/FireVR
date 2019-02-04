@@ -2,13 +2,12 @@ bl_info = {
 	"name" : "FireVR",
 	"author" : "void4",
 	"version" : (0, 1),
-	"blender" : (2, 75, 0),
-	"location" : "View3D > Toolshelf > Misc",
+	"blender" : (2, 80, 0),
+	"location" : "View3D > Toolshelf > FireVR",
 	"description": "Exports the scene into FireBox HTML and publishes it to IPFS or Vesta",
 	"wiki_url" : "https://github.com/Spyduck/FireVR",
 	"category" : "Import-Export"
 }
-
 import importlib
 import requests, json, webbrowser, tarfile
 if "bpy" in locals():
@@ -60,8 +59,8 @@ vesta_base_url = 'https://vesta.janusvr.com'
 class ToolPanel(Panel):
 	bl_label = "Firebox"
 	bl_space_type = "VIEW_3D"
-	bl_region_type = "TOOLS"
-
+	bl_region_type = 'TOOLS' if bpy.app.version < (2, 80) else 'UI'
+	bl_category = 'FireVR'
 	def draw(self, context):
 		self.layout.operator("fire.html", icon_value=custom_icons["custom_icon"].icon_id)
 		if context.scene.roomhash:
@@ -69,8 +68,8 @@ class ToolPanel(Panel):
 		# The licence of my contributions is public domain, too,
 		# but I would prefer if this note stuck around.
 		# Including the "Who needs sleep?" bit. - 20kdc, who needs sleep. (It's 2AM.)
-		self.layout.label("Warning: Export may apply transforms.")
-		self.layout.label("Save before usage. Who needs sleep?")
+		self.layout.label(text="Warning: Export may apply transforms.")
+		self.layout.label(text="Save before usage. Who needs sleep?")
 		self.layout.operator("export_scene.html")
 
 Scene.janus_ipfs = BoolProperty(name="Use IPFS", default=False)
@@ -89,23 +88,25 @@ def update_vesta_token(self,context):
 class VestaSettingsPanel(Panel):
 	bl_label = "VESTA Export"
 	bl_space_type = "VIEW_3D"
-	bl_region_type = "TOOLS"
+	bl_region_type = 'TOOLS' if bpy.app.version < (2, 80) else 'UI'
+	bl_category = 'FireVR'
 
 	vestatoken = None
 	def draw(self, context):
-		self.layout.label("Exports directly to Vesta.")
-		self.layout.label("https://vesta.janusvr.com")
-		self.layout.label("Save before use.")
+		self.layout.label(text="Exports directly to Vesta.")
+		self.layout.label(text="https://vesta.janusvr.com")
+		self.layout.label(text="Save before use.")
 		self.layout.operator("vesta.get_token")
 		col = self.layout.column()
 		self.vestatoken = getv(bpy.context, "vestatoken") or ''
-		col.prop(bpy.context.user_preferences.addons[__name__].preferences, "vestatoken")
+		col.prop(preferences().addons[__name__].preferences, "vestatoken")
 		self.layout.operator("export_scene.vesta")
 
 class ExportSettingsPanel(Panel):
 	bl_label = "Export Settings"
 	bl_space_type = "VIEW_3D"
-	bl_region_type = "TOOLS"
+	bl_region_type = 'TOOLS' if bpy.app.version < (2, 80) else 'UI'
+	bl_category = 'FireVR'
 
 	def draw(self, context):
 		self.layout.operator("export_path.html")
@@ -126,7 +127,8 @@ Scene.janus_importpath = StringProperty(name="importpath", description="Specify 
 class ImportSettingsPanel(Panel):
 	bl_label = "Import Settings"
 	bl_space_type = "VIEW_3D"
-	bl_region_type = "TOOLS"
+	bl_region_type = 'TOOLS' if bpy.app.version < (2, 80) else 'UI'
+	bl_category = 'FireVR'
 
 	def draw(self, context):
 		self.layout.operator("import_scene.html")
@@ -141,7 +143,8 @@ Scene.janus_updaterate = IntProperty(name="Rate", default=100, min=1, max=5000)
 class RunSettingsPanel(Panel):
 	bl_label = "Run Settings"
 	bl_space_type = "VIEW_3D"
-	bl_region_type = "TOOLS"
+	bl_region_type = 'TOOLS' if bpy.app.version < (2, 80) else 'UI'
+	bl_category = 'FireVR'
 
 	def draw(self, context):
 		self.layout.operator("set_path.janus")
@@ -149,7 +152,7 @@ class RunSettingsPanel(Panel):
 		self.layout.prop(context.scene, "janus_updaterate")
 		self.layout.prop(context.scene, "janus_fullscreen")
 		if not context.scene.janus_fullscreen:
-			self.layout.label("Window size")
+			self.layout.label(text="Window size")
 			self.layout.prop(context.scene, "janus_size")
 
 Scene.janus_object_export = EnumProperty(name="", default=".obj", items=((".obj", "Wavefront (.obj)", "Wavefront object files"),(".dae", "Collada (.dae)", "Collada files")))
@@ -182,11 +185,10 @@ Object.janus_object_sound_once = BoolProperty(name="Play once", default=False)
 class ObjectPanel(Panel):
 	bl_label = "Objects"
 	bl_space_type = "VIEW_3D"
-	bl_region_type = "TOOLS"
+	bl_region_type = 'TOOLS' if bpy.app.version < (2, 80) else 'UI'
+	bl_category = 'FireVR'
 
 	def draw(self, context):
-		if context.object is None:
-			print(context)
 		if context.object is not None:
 			if context.object.type == "MESH":
 				self.layout.prop(context.object, "janus_object_objtype")
@@ -206,10 +208,10 @@ class ObjectPanel(Panel):
 					self.layout.prop(context.object, "janus_object_websurface")
 					if context.object.janus_object_websurface:
 						self.layout.prop(context.object, "janus_object_websurface_url")
-						self.layout.label("Width & Height")
+						self.layout.label(text="Width & Height")
 						self.layout.prop(context.object, "janus_object_websurface_size")
 
-					self.layout.label("Cull Face")
+					self.layout.label(text="Cull Face")
 					self.layout.prop(context.object, "janus_object_cullface")
 
 					self.layout.prop(context.object, "janus_object_shader_active")
@@ -217,9 +219,9 @@ class ObjectPanel(Panel):
 						self.layout.prop(context.object, "janus_object_shader_frag")
 						self.layout.prop(context.object, "janus_object_shader_vert")
 				elif context.object.janus_object_objtype == "JOT_LINK":
-					self.layout.label("Use a standard plane,")
-					self.layout.label(" and adjust the transform.")
-					self.layout.label("(Don't edit the mesh itself)")
+					self.layout.label(text="Use a standard plane,")
+					self.layout.label(text=" and adjust the transform.")
+					self.layout.label(text="(Don't edit the mesh itself)")
 					self.layout.prop(context.object, "janus_object_link_name")
 					self.layout.prop(context.object, "janus_object_link_url")
 					self.layout.prop(context.object, "janus_object_active")
@@ -228,9 +230,9 @@ class ObjectPanel(Panel):
 				self.layout.prop(context.object, "janus_object_sound")
 				self.layout.prop(context.object, "janus_object_jsid")
 				self.layout.prop(context.object, "janus_object_sound_dist")
-				self.layout.label("XY1")
+				self.layout.label(text="XY1")
 				self.layout.prop(context.object, "janus_object_sound_xy1")
-				self.layout.label("XY2")
+				self.layout.label(text="XY2")
 				self.layout.prop(context.object, "janus_object_sound_xy2")
 
 				self.layout.prop(context.object, "janus_object_sound_loop")
@@ -288,7 +290,8 @@ Scene.janus_room_locked = BoolProperty(name="Lock Room", default=False)
 class RoomPanel(Panel):
 	bl_label = "Room"
 	bl_space_type = "VIEW_3D"
-	bl_region_type = "TOOLS"
+	bl_region_type = 'TOOLS' if bpy.app.version < (2, 80) else 'UI'
+	bl_category = 'FireVR'
 
 	def draw(self, context):
 		self.layout.prop(context.scene, "janus_room")
@@ -317,10 +320,10 @@ class RoomPanel(Panel):
 		self.layout.prop(context.scene, "janus_room_runspeed")
 
 		self.layout.prop(context.scene, "janus_room_jump")
-		self.layout.label("Clip Plane")
+		self.layout.label(text="Clip Plane")
 		self.layout.prop(context.scene, "janus_room_clipplane")
 
-		self.layout.label("Teleport Range")
+		self.layout.label(text="Teleport Range")
 		self.layout.prop(context.scene, "janus_room_teleport")
 
 		self.layout.prop(context.scene, "janus_room_defaultsounds")
@@ -360,7 +363,8 @@ Scene.janus_server_port = IntProperty(name="Port", default=5567, min=0, max=2**1
 class ServerPanel(Panel):
 	bl_label = "Multiplayer"
 	bl_space_type = "VIEW_3D"
-	bl_region_type = "TOOLS"
+	bl_region_type = 'TOOLS' if bpy.app.version < (2, 80) else 'UI'
+	bl_category = 'FireVR'
 
 	def draw(self, context):
 		self.layout.prop(context.scene, "janus_server_default")
@@ -373,7 +377,8 @@ Scene.janus_debug = BoolProperty(name="JanusVR", default=False)
 class DebugPanel(Panel):
 	bl_label = "Debug"
 	bl_space_type = "VIEW_3D"
-	bl_region_type = "TOOLS"
+	bl_region_type = 'TOOLS' if bpy.app.version < (2, 80) else 'UI'
+	bl_category = 'FireVR'
 
 	def draw(self, context):
 		self.layout.prop(context.scene, "janus_debug")
@@ -393,12 +398,17 @@ class ipfsvr(AddonPreferences):
 		layout.label("VR Preferences")
 		#layout.prop(self, exportpath)
 
+def preferences():
+	if bpy.app.version < (2, 80):
+		return bpy.context.user_preferences
+	else:
+		return bpy.context.preferences
 def setv(context, name, value):
-	context.user_preferences.addons[__name__].preferences[name] = value
+	preferences().addons[__name__].preferences[name] = value
 
 def getv(context, name):
 	try:
-		return context.user_preferences.addons[__name__].preferences[name]
+		return preferences().addons[__name__].preferences[name]
 	except KeyError:
 		return None
 
@@ -420,7 +430,7 @@ class VRExportPath(Operator, ExportHelper):
 	def execute(self, context):
 		keywords = self.as_keywords(ignore=("filter_glob","check_existing"))
 
-		if bpy.data.is_saved and context.user_preferences.filepaths.use_relative_paths:
+		if bpy.data.is_saved and preferences().filepaths.use_relative_paths:
 			keywords["relpath"] = os.path.dirname((bpy.data.path_resolve("filepath", False).as_bytes()))
 
 		if os.path.isdir(os.path.dirname(keywords["filepath"])):
@@ -452,7 +462,7 @@ class VRJanusPath(Operator, ExportHelper, AddonPreferences):
 	def execute(self, context):
 		keywords = self.as_keywords(ignore=("filter_glob","check_existing"))
 
-		if bpy.data.is_saved and context.user_preferences.filepaths.use_relative_paths:
+		if bpy.data.is_saved and preferences().filepaths.use_relative_paths:
 			keywords["relpath"] = bpy.data.path_resolve("filepath", False).as_bytes()
 
 		if os.path.isfile(keywords["filepath"]):
@@ -620,10 +630,10 @@ class VRJanus(Operator):
 			args.append("-height")
 			args.append(str(context.scene.janus_size[1]))
 
-		args += ["render", context.scene.janus_rendermode]
+		args += ["-render", context.scene.janus_rendermode]
 		if context.scene.janus_rendermode == '2d':
-			args += ["mode", context.scene.janus_rendermode]
-		args += ["rate", str(context.scene.janus_updaterate)]
+			args += ["-mode", context.scene.janus_rendermode]
+		args += ["-rate", str(context.scene.janus_updaterate)]
 
 		if not context.scene.janus_ipfs:
 			filepath = os.path.join(filepath, "index.html")
@@ -659,7 +669,10 @@ def register():
 	script_path = os.path.realpath(__file__)
 	icon_path = os.path.join(os.path.dirname(script_path), "icon.png")
 	custom_icons.load("custom_icon", icon_path, "IMAGE")
-	bpy.utils.register_module(__name__)
+	#bpy.utils.register_module(__name__)
+	for cls in classes:
+		make_annotations(cls)
+		bpy.utils.register_class(cls)
 	if getv(bpy.context, "exportpath") is None:
 		setv(bpy.context, "exportpath", "jvr")
 	if getv(bpy.context, "vestatoken") is None:
@@ -668,7 +681,46 @@ def register():
 def unregister():
 	global custom_icons
 	bpy.utils.previews.remove(custom_icons)
-	bpy.utils.unregister_module(__name__)
+	for cls in reversed(classes):
+		try:
+			bpy.utils.unregister_class(cls)
+		except RuntimeError:
+			pass
+
+def make_annotations(cls):
+	"""Converts class fields to annotations if running with Blender 2.8"""
+	if bpy.app.version < (2, 80):
+		return cls
+	bl_props = {k: v for k, v in cls.__dict__.items() if isinstance(v, tuple)}
+	if bl_props:
+		if '__annotations__' not in cls.__dict__:
+			setattr(cls, '__annotations__', {})
+		annotations = cls.__dict__['__annotations__']
+		for k, v in bl_props.items():
+			annotations[k] = v
+			delattr(cls, k)
+	return cls
+
+classes = ( ToolPanel,
+	VestaSettingsPanel,
+	ExportSettingsPanel,
+	ImportSettingsPanel,
+	RunSettingsPanel,
+	ObjectPanel,
+	RoomPanel,
+	ServerPanel,
+	DebugPanel,
+	ipfsvr,
+	VRExportPath,
+	VRJanusPath,
+	VestaGetToken,
+	VestaToken,
+	VRImport,
+	VRExport,
+	VRExportVesta,
+	VRJanus,
+	VRFire,
+)
 
 if __name__ == "__main__":
 	register()
