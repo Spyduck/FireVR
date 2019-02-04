@@ -86,8 +86,6 @@ class AssetObjectObj:
 			if ext == '.gz':
 				_, ext = os.path.splitext(os.path.basename(name))
 				ext += '.gz'
-				
-			print('ext', ext)
 			return os.path.join(self.workingpath, self.md5(source)+ext)
 		return os.path.join(self.workingpath, os.path.basename(path))
 
@@ -130,28 +128,23 @@ class AssetObjectObj:
 			self.src, _ = self.retrieve(self.src)
 			exists = False
 			if self.mtl is None:
-				#print('NO MTL SET, GETTING FROM '+self.src)
 				with open(self.src,'r') as f:
 					mtllib = re.search(r"mtllib (.*?)$", f.read(), re.MULTILINE)
 					if mtllib:
 						try:
 							self.mtl_basepath = self.abs_source( os.path.dirname(self.abs_source(self.basepath, self.tag["src"])), mtllib.group(1))
-							#print('basepath '+self.mtl_basepath)
 							self.mtl, exists = self.retrieve(self.mtl_basepath)
 						except Exception as e:
 							print(e)
 							self.mtl = None
 			if self.mtl is not None:
-				#mtlpath = os.path.dirname(self.mtl)
 				if self.mtl_basepath:
 					mtlpath = os.path.dirname(self.mtl_basepath)
 				else:
 					mtlpath = os.path.dirname(self.abs_source(self.basepath,self.mtl))
-				#print('mtlpath '+mtlpath)
 				src_mtl = self.mtl
 				if not exists:
 					self.mtl, exists = self.retrieve(self.mtl)
-				#print(self.mtl)
 				imgfiles = []
 				if os.path.exists(self.mtl) and not exists:
 						
@@ -163,7 +156,6 @@ class AssetObjectObj:
 						if imgfile[0] not in self.downloaded_imgfiles:
 							if not os.path.exists(os.path.join(self.workingpath, imgfile[0])):
 								self.downloaded_imgfiles[imgfile[0]], _ = self.retrieve(imgfile[0], mtlpath)
-								print('self.downloaded_imgfiles[imgfile[0]]', self.downloaded_imgfiles[imgfile[0]])
 
 					# rewrite mtl to point to local file
 					with open(self.abs_target(self.mtl, source=src_mtl), "r") as mtlfile:
@@ -177,7 +169,6 @@ class AssetObjectObj:
 			print('Loaded asset.')
 	#An .obj can include multiple objects!
 	def instantiate(self, tag):
-		#print(tag)
 		if not self.imported:
 			#bpy.ops.object.select_all(action='DESELECT')
 			self.load()
@@ -185,7 +176,6 @@ class AssetObjectObj:
 			objects = list(bpy.data.objects)
 			if self.mtl is not None:
 				if self.mtl[:-4] != self.src[:-4]:
-					#print('Rewriting obj')
 					# rewrite obj to use correct mtl
 					replaced = False
 					file = ""
@@ -209,8 +199,6 @@ class AssetObjectObj:
 			self.objects = [o for o in list(bpy.data.objects) if o not in objects]
 			obj = bpy.context.selected_objects[0]
 			obj.name = self.id
-			print('self.objects', self.objects)
-			#self.objects = bpy.context.selected_objects
 		else:
 			newobj = []
 			for obj in self.objects:
@@ -256,7 +244,6 @@ def read_html(operator, scene, filepath, path_mode, workingpath):
 		html = re.sub("(-->)", "", html.decode('utf-8'), flags=re.DOTALL).encode('utf-8')
 	soup = bs4.BeautifulSoup(html, "html.parser")
 	fireboxrooms = soup.findAll("fireboxroom")
-	#print(str(len(fireboxrooms)))
 
 	if len(fireboxrooms) == 0:
 		operator.report({"ERROR"}, "Could not find the FireBoxRoom tag")
@@ -305,10 +292,8 @@ def read_html(operator, scene, filepath, path_mode, workingpath):
 	for asset in all_assets:
 		#dae might be different!
 		#assets with same basename will conflict (e.g. from different domains)
-		print(asset)
 		
 		if asset.attrs.get("src", None) is not None:
-			print(asset['src'])
 			if asset["src"].endswith(".obj") or asset["src"].endswith(".obj.gz"):
 				jassets[asset["id"]] = AssetObjectObj(basepath, workingpath, asset)
 			elif asset["src"].endswith(".dae") or asset["src"].endswith(".dae.gz"):
@@ -316,7 +301,6 @@ def read_html(operator, scene, filepath, path_mode, workingpath):
 			else:
 				continue
 		else:
-			print('no src')
 			continue
 
 	objects = room.findAll("object")
@@ -338,9 +322,7 @@ def multiply(vec1, vec2):
 	return (vec1[0]*vec2[0], vec1[1]*vec2[1], vec1[2]*vec2[2])
 
 class AssetObjectDae(AssetObjectObj):
-	#An .obj can include multiple objects!
 	def instantiate(self, tag):
-		#print(tag)
 		self.load()
 		if not self.imported:
 			before = len(bpy.data.objects)
@@ -401,7 +383,6 @@ class AssetObjectDae(AssetObjectObj):
 				if not os.path.exists(os.path.join(self.workingpath, img)):
 					#img = self.retrieve(img, os.path.dirname(self.abs_source(self.basepath, self.src)))
 					img, _ = self.retrieve(img, os.path.dirname(self.abs_source(self.basepath, self.src)))
-					print('img', dae_url, img)
 					if img:
 						img = img[img.rfind(os.path.sep)+1:].replace('\\','/')
 					line = re.sub('<init_from>(.*?)</init_from>', '<init_from>'+img+'</init_from>', line)
