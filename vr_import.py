@@ -9,6 +9,7 @@ import re
 import bs4
 import traceback
 import sys
+import json
 from hashlib import md5 as hashlib_md5
 current_module = sys.modules[__name__]
 primitive_path = 'file:///'+os.path.join(os.path.dirname(current_module.__file__), 'primitives')
@@ -294,10 +295,12 @@ def read_html(operator, scene, filepath, path_mode, workingpath):
 		#assets with same basename will conflict (e.g. from different domains)
 		
 		if asset.attrs.get("src", None) is not None:
-			if asset["src"].endswith(".obj") or asset["src"].endswith(".obj.gz"):
+			if asset["src"].lower().endswith(".obj") or asset["src"].lower().endswith(".obj.gz"):
 				jassets[asset["id"]] = AssetObjectObj(basepath, workingpath, asset)
-			elif asset["src"].endswith(".dae") or asset["src"].endswith(".dae.gz"):
+			elif asset["src"].lower().endswith(".dae") or asset["src"].lower().endswith(".dae.gz"):
 				jassets[asset["id"]] = AssetObjectDae(basepath, workingpath, asset)
+			elif asset["src"].lower().endswith(".gltf") or asset["src"].lower().endswith(".gltf.gz"):
+				jassets[asset["id"]] = AssetObjectGltf(basepath, workingpath, asset)
 			else:
 				continue
 		else:
@@ -310,9 +313,17 @@ def read_html(operator, scene, filepath, path_mode, workingpath):
 
 	for obj in objects:
 		try:
-			asset = jassets.get(obj.get("id"))
-			if asset:
-				asset.instantiate(obj)
+			id = obj.get('id')
+			if id:
+				asset = jassets.get(id)
+				if asset:
+					asset.instantiate(obj)
+				elif id.startswith('http://') or id.startswith('https://'):
+					asset_src = '<AssetObject id="'+id+'" src="'+id+'"/>'
+					new_asset = bs4.BeautifulSoup(asset_src, 'html.parser').find('assetobject')
+					jassets[new_asset['id']] = AssetObjectGltf(basepath, workingpath, new_asset)
+					asset = jassets.get(id)
+					asset.instantiate(obj)
 		except:
 			print(traceback.format_exc())
 
@@ -394,6 +405,88 @@ class AssetObjectDae(AssetObjectObj):
 		f = open(path,'w')
 		f.write(output)
 		f.close()
-		
+
+class AssetObjectGltf(AssetObjectObj):
+	def instantiate(self, tag):
+		self.load()
+		if not self.imported:
+			before = len(bpy.data.objects)
+			self.imported = True
+			bpy.ops.object.select_all(action='DESELECT')
+			bpy.ops.import_scene.gltf(filepath=self.src)
+			bpy.ops.object.make_single_user(type='SELECTED_OBJECTS', object=True, obdata=True)
+			bpy.ops.object.transform_apply(location = True, scale = True, rotation = True)
+			self.objects = bpy.context.selected_objects
+			for obj in self.objects:
+				obj.name = self.id
+		else:
+			newobj = []
+			for obj in self.objects:
+				bpy.ops.object.select_all(action='DESELECT')
+				bpy.ops.object.select_pattern(pattern=obj.name)
+				bpy.ops.object.duplicate(linked=True)
+				newobj.extend(bpy.context.selected_objects)
+			self.objects = newobj
+
+		for obj in self.objects:
+			scale = s2v(tag.attrs.get("scale", "1 1 1"))
+			obj.scale = (scale[0], scale[2], scale[1])
+			if "xdir" in tag.attrs or "ydir" in tag.attrs or "zdir" in tag.attrs:
+				xdir = s2v(tag.attrs.get("xdir", "1 0 0"))
+				ydir = s2v(tag.attrs.get("ydir", "0 1 0"))
+				zdir = s2v(tag.attrs.get("zdir", "0 0 1"))
+				zdir = (zdir[0], zdir[2], zdir[1])
+				ydir = (ydir[0], ydir[2], ydir[1])
+				obj.rotation_mode = 'XYZ'
+				obj.rotation_euler = (Matrix([xdir, zdir, ydir])).to_euler()
+			else:
+				obj.rotation_euler = fromFwd(s2v(tag.attrs.get("fwd", "0 0 1"))).to_euler()
+
+			obj.location = s2p(tag.attrs.get("pos", "0 0 0"))
+	def load(self):
+		if self.loaded:
+			return
+
+		if self.src:
+			src_orig = self.abs_source(os.path.dirname(self.basepath), self.src)
+			self.src, exists = self.retrieve(self.src)
+			if not exists and self.src:
+				self.parse_gltf(self.src,src_orig)
+			self.loaded = True
+
+	def parse_gltf(self, path, gltf_url):
+		changed_file = False
+		content = None
+		with open(path, 'rb') as f:
+			try:
+				content = json.loads(str(f.read(), 'utf-8'))
+			except: # probably gltf binary, ignore
+				return
+			# fetch .bin
+			buffers = content.get('buffers',[])
+			for i in range(0,len(buffers)):
+				buffer = buffers[i]
+				uri = buffer.get('uri',None)
+				if uri:
+					uri_fn = self.abs_source(os.path.dirname(gltf_url), uri)
+					if not os.path.exists(os.path.join(self.workingpath, uri_fn)):
+						bin, _ = self.retrieve(uri_fn, os.path.dirname(self.abs_source(os.path.dirname(gltf_url), uri_fn)))
+						content['buffers'][i]['uri'] = bin
+						changed_file = True
+			# fetch images
+			images = content.get('images',[])
+			for i in range(0,len(images)):
+				image = images[i]
+				uri = image.get('uri',None)
+				if uri:
+					uri_fn = self.abs_source(os.path.dirname(gltf_url), uri)
+					if not os.path.exists(os.path.join(self.workingpath, uri_fn)):
+						img, _ = self.retrieve(uri_fn, os.path.dirname(self.abs_source(os.path.dirname(gltf_url), uri_fn)))
+						content['images'][i]['uri'] = img
+						changed_file = True
+		if changed_file:
+			with open(path, 'wb') as f:
+				f.write(bytes(json.dumps(content), 'utf-8'))
+	
 def load(operator, context, filepath, path_mode="AUTO", relpath="", workingpath="FireVR/tmp"):
 	read_html(operator, context.scene, filepath, path_mode, workingpath)
