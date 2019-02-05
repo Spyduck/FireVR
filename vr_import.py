@@ -468,6 +468,8 @@ class AssetObjectGltf(AssetObjectObj):
 				buffer = buffers[i]
 				uri = buffer.get('uri',None)
 				if uri:
+					if uri.startswith('data:'):
+						continue
 					uri_fn = self.abs_source(os.path.dirname(gltf_url), uri)
 					if not os.path.exists(os.path.join(self.workingpath, uri_fn)):
 						bin, _ = self.retrieve(uri_fn, os.path.dirname(self.abs_source(os.path.dirname(gltf_url), uri_fn)))
@@ -479,6 +481,8 @@ class AssetObjectGltf(AssetObjectObj):
 				image = images[i]
 				uri = image.get('uri',None)
 				if uri:
+					if uri.startswith('data:'):
+						continue
 					uri_fn = self.abs_source(os.path.dirname(gltf_url), uri)
 					if not os.path.exists(os.path.join(self.workingpath, uri_fn)):
 						img, _ = self.retrieve(uri_fn, os.path.dirname(self.abs_source(os.path.dirname(gltf_url), uri_fn)))
