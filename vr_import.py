@@ -28,6 +28,7 @@ def s2lp(s):
 	v = s2v(s)
 	return [v[0], v[2], v[1]]
 
+'''
 def fromFwd(zdir):
 	ydir = [0,1,0]
 	xdir = Vector(ydir).cross(Vector(zdir))
@@ -35,6 +36,13 @@ def fromFwd(zdir):
 	ydir = [0,0,1]
 	mtrx = Matrix([xdir, zdir, ydir])
 	return mtrx
+'''
+def fromFwd(v):
+	d = Vector(v)
+	z = d.normalized()
+	x = Vector([0,1,0]).cross(z).normalized()
+	y = z.cross(x).normalized()
+	return Matrix([x, y, z])
 
 def neg(v):
 	return [-e for e in v]
@@ -212,19 +220,26 @@ class AssetObjectObj:
 		for obj in self.objects:
 			scale = s2v(tag.attrs.get("scale", "1 1 1"))
 			obj.scale = (scale[0], scale[2], scale[1])
-			if "xdir" in tag.attrs or "ydir" in tag.attrs or "zdir" in tag.attrs:
-				xdir = s2v(tag.attrs.get("xdir", "1 0 0"))
-				ydir = s2v(tag.attrs.get("ydir", "0 1 0"))
-				zdir = s2v(tag.attrs.get("zdir", "0 0 1"))
-				zdir = (zdir[0], zdir[2], zdir[1])
-				ydir = (ydir[0], ydir[2], ydir[1])
-				obj.rotation_euler = (Matrix([xdir, zdir, ydir])).to_euler()
-			else:
-				obj.rotation_euler = fromFwd(s2v(tag.attrs.get("fwd", "0 0 1"))).to_euler()
-
+			obj.rotation_euler = get_rotation_euler(tag)
 			location = s2p(tag.attrs.get("pos", "0 0 0"))
 			obj.location = location #translate(obj.location, location)
 		return list(self.objects)
+
+def get_rotation_euler(tag):
+	if "xdir" in tag.attrs or "ydir" in tag.attrs or "zdir" in tag.attrs:
+		xdir = s2v(tag.attrs.get("xdir", "1 0 0"))
+		ydir = s2v(tag.attrs.get("ydir", "0 1 0"))
+		zdir = s2v(tag.attrs.get("zdir", "0 0 1"))
+		zdir = (zdir[0], zdir[2], zdir[1])
+		ydir = (ydir[0], ydir[2], ydir[1])
+		return (Matrix([xdir, zdir, ydir])).to_euler()
+	elif 'rotation' in tag.attrs:
+		rotation = s2v(tag.attrs.get('rotation', '0 0 0'))
+		rotation = (rotation[0], rotation[1], rotation[2])
+		return (radians(rotation[0]), radians(rotation[1]), radians(rotation[2]))
+	else:
+		return fromFwd(s2v(tag.attrs.get("fwd", "0 0 1"))).to_euler()
+
 def read_html(operator, scene, filepath, path_mode, workingpath):
 	#FEATURE import from ipfs://
 	if filepath.startswith("http://") or filepath.startswith("https://"):
@@ -238,7 +253,8 @@ def read_html(operator, scene, filepath, path_mode, workingpath):
 
 	source = urlreq.urlopen(filepath.replace('\\','/'))
 	html = source.read()
-	fireboxrooms = bs4.BeautifulSoup(html, "html.parser").findAll("fireboxroom")
+	#fireboxrooms = bs4.BeautifulSoup(html, "html.parser").findAll("fireboxroom")
+	fireboxrooms = bs4.BeautifulSoup(html, "html.parser").find_all(lambda tag: tag.name.lower()=='fireboxroom')
 	if len(fireboxrooms) == 0:
 		# no fireboxroom, remove comments and try again
 		html = re.sub("(<!--)", "", html.decode('utf-8'), flags=re.DOTALL).encode('utf-8')
@@ -301,6 +317,8 @@ def read_html(operator, scene, filepath, path_mode, workingpath):
 				jassets[asset["id"]] = AssetObjectDae(basepath, workingpath, asset)
 			elif asset["src"].lower().endswith(".gltf") or asset["src"].lower().endswith(".gltf.gz"):
 				jassets[asset["id"]] = AssetObjectGltf(basepath, workingpath, asset)
+			elif asset["src"].lower().endswith(".fbx") or asset["src"].lower().endswith(".fbx.gz"):
+				jassets[asset["id"]] = AssetObjectFbx(basepath, workingpath, asset)
 			else:
 				continue
 		else:
@@ -413,11 +431,19 @@ class AssetObjectGltf(AssetObjectObj):
 			before = len(bpy.data.objects)
 			self.imported = True
 			bpy.ops.object.select_all(action='DESELECT')
+			objects = list(bpy.data.objects)
 			bpy.ops.import_scene.gltf(filepath=self.src)
 			bpy.ops.object.make_single_user(type='SELECTED_OBJECTS', object=True, obdata=True)
 			bpy.ops.object.transform_apply(location = True, scale = True, rotation = True)
-			self.objects = bpy.context.selected_objects
+			self.objects = [o for o in list(bpy.data.objects) if o not in objects]
+			#bpy.context.selected_objects = self.objects
 			for obj in self.objects:
+				obj.select_set(state=True)
+			bpy.ops.object.join()
+			bpy.ops.object.select_all(action='DESELECT')
+			self.objects = [o for o in list(bpy.data.objects) if o not in objects]
+			for obj in self.objects:
+				obj.select_set(state=True)
 				obj.name = self.id
 		else:
 			newobj = []
@@ -492,5 +518,53 @@ class AssetObjectGltf(AssetObjectObj):
 			with open(path, 'wb') as f:
 				f.write(bytes(json.dumps(content), 'utf-8'))
 	
+class AssetObjectFbx(AssetObjectObj):
+	def instantiate(self, tag):
+		self.load()
+		if not self.imported:
+			before = len(bpy.data.objects)
+			self.imported = True
+			bpy.ops.object.select_all(action='DESELECT')
+			objects = list(bpy.data.objects)
+			bpy.ops.import_scene.fbx(filepath=self.src, bake_space_transform=True, global_scale=100.0, use_manual_orientation=False, axis_up='Z', axis_forward='-Y')#, axis_up='Y', axis_forward='-Z')
+			bpy.ops.object.make_single_user(type='SELECTED_OBJECTS', object=True, obdata=True)
+			bpy.ops.object.transform_apply(location = True, scale = True, rotation = True)
+			self.objects = [o for o in list(bpy.data.objects) if o not in objects]
+			for obj in self.objects:
+				obj.select_set(state=True)
+				bpy.context.view_layer.objects.active = obj
+			bpy.ops.object.join()
+			bpy.ops.object.select_all(action='DESELECT')
+			self.objects = [o for o in list(bpy.data.objects) if o not in objects]
+			for obj in self.objects:
+				obj.select_set(state=True)
+				obj.name = self.id
+				bpy.context.view_layer.objects.active = obj
+		else:
+			newobj = []
+			for obj in self.objects:
+				bpy.ops.object.select_all(action='DESELECT')
+				bpy.ops.object.select_pattern(pattern=obj.name)
+				bpy.ops.object.duplicate(linked=True)
+				newobj.extend(bpy.context.selected_objects)
+			self.objects = newobj
+
+		for obj in self.objects:
+			scale = s2v(tag.attrs.get("scale", "1 1 1"))
+			obj.scale = (scale[0], scale[2], scale[1])
+			
+			obj.rotation_euler = get_rotation_euler(tag)
+			obj.rotation_mode = 'XYZ'
+
+			obj.location = s2p(tag.attrs.get("pos", "0 0 0"))
+	def load(self):
+		if self.loaded:
+			return
+
+		if self.src:
+			src_orig = self.abs_source(os.path.dirname(self.basepath), self.src)
+			self.src, exists = self.retrieve(self.src)
+			self.loaded = True
+
 def load(operator, context, filepath, path_mode="AUTO", relpath="", workingpath="FireVR/tmp"):
 	read_html(operator, context.scene, filepath, path_mode, workingpath)
