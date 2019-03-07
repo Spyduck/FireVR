@@ -29,20 +29,22 @@ def s2lp(s):
 	return [v[0], v[2], v[1]]
 
 '''
-def fromFwd(zdir):
-	ydir = [0,1,0]
-	xdir = Vector(ydir).cross(Vector(zdir))
-	zdir = (zdir[0], zdir[2], zdir[1])
-	ydir = [0,0,1]
-	mtrx = Matrix([xdir, zdir, ydir])
-	return mtrx
-'''
+# from JanusVR native "setFwd"
 def fromFwd(v):
 	d = Vector(v)
 	z = d.normalized()
 	x = Vector([0,1,0]).cross(z).normalized()
 	y = z.cross(x).normalized()
 	return Matrix([x, y, z])
+'''
+def fromFwd(v):
+	d = Vector(v)
+	z = d.normalized()
+	x = Vector([0,1,0]).cross(z).normalized()
+	y = z.cross(x).normalized()
+	z = (z[0], z[2], z[1])
+	y = (y[0], y[2], y[1])
+	return Matrix([x, z, y])
 
 def neg(v):
 	return [-e for e in v]
@@ -315,7 +317,7 @@ def read_html(operator, scene, filepath, path_mode, workingpath):
 				jassets[asset["id"]] = AssetObjectObj(basepath, workingpath, asset)
 			elif asset["src"].lower().endswith(".dae") or asset["src"].lower().endswith(".dae.gz"):
 				jassets[asset["id"]] = AssetObjectDae(basepath, workingpath, asset)
-			elif asset["src"].lower().endswith(".gltf") or asset["src"].lower().endswith(".gltf.gz"):
+			elif asset["src"].lower().endswith(".gltf") or asset["src"].lower().endswith(".gltf.gz") or asset["src"].lower().endswith(".glb") or asset["src"].lower().endswith(".glb.gz") or '://content.decentraland.today/contents/' in asset["src"].lower():
 				jassets[asset["id"]] = AssetObjectGltf(basepath, workingpath, asset)
 			elif asset["src"].lower().endswith(".fbx") or asset["src"].lower().endswith(".fbx.gz"):
 				jassets[asset["id"]] = AssetObjectFbx(basepath, workingpath, asset)
@@ -369,24 +371,15 @@ class AssetObjectDae(AssetObjectObj):
 				bpy.ops.object.select_all(action='DESELECT')
 				bpy.ops.object.select_pattern(pattern=obj.name)
 				bpy.ops.object.duplicate(linked=True)
-				#newobj.append(bpy.context.selected_objects[0])
 				newobj.extend(bpy.context.selected_objects)
 			self.objects = newobj
 
 		for obj in self.objects:
 			scale = s2v(tag.attrs.get("scale", "1 1 1"))
 			obj.scale = (scale[0], scale[2], scale[1])
-			if "xdir" in tag.attrs or "ydir" in tag.attrs or "zdir" in tag.attrs:
-				xdir = s2v(tag.attrs.get("xdir", "1 0 0"))
-				ydir = s2v(tag.attrs.get("ydir", "0 1 0"))
-				zdir = s2v(tag.attrs.get("zdir", "0 0 1"))
-				zdir = (zdir[0], zdir[2], zdir[1])
-				ydir = (ydir[0], ydir[2], ydir[1])
-				obj.rotation_euler = (Matrix([xdir, zdir, ydir])).to_euler()
-			else:
-				obj.rotation_euler = fromFwd(s2v(tag.attrs.get("fwd", "0 0 1"))).to_euler()
-
-			obj.location = s2p(tag.attrs.get("pos", "0 0 0"))
+			obj.rotation_euler = get_rotation_euler(tag)
+			location = s2p(tag.attrs.get("pos", "0 0 0"))
+			obj.location = location
 
 	def load(self):
 
