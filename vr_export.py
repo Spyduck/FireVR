@@ -304,7 +304,7 @@ def write_html(scene, filepath, path_mode, base_path=''):
 							os.remove(epath)
 					elif scene.janus_object_export == '.gltf':
 						with redirect_stdout(stdout):
-							bpy.ops.export_scene.gltf(export_format='GLTF_EMBEDDED', export_selected=True, export_apply=True, filepath=epath)
+							bpy.ops.export_scene.gltf(export_format='GLTF_SEPARATE', export_selected=True, export_apply=True, filepath=epath)
 							gzip_compress(epath, epath+'.gz')
 							os.remove(epath)
 					if scene.janus_object_export==".obj":

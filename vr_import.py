@@ -40,10 +40,11 @@ def fromFwd(v):
 def fromFwd(v):
 	d = Vector(v)
 	z = d.normalized()
-	x = Vector([0,1,0]).cross(z).normalized()
-	y = z.cross(x).normalized()
+	x = Vector([0,1,0]).cross(z)
+	y = z.cross(x)
 	z = (z[0], z[2], z[1])
 	y = (y[0], y[2], y[1])
+	x = (x[0], x[2], x[1])
 	return Matrix([x, z, y])
 
 def neg(v):
@@ -222,12 +223,14 @@ class AssetObjectObj:
 		for obj in self.objects:
 			scale = s2v(tag.attrs.get("scale", "1 1 1"))
 			obj.scale = (scale[0], scale[2], scale[1])
-			obj.rotation_euler = get_rotation_euler(tag)
+			obj.rotation_euler = get_rotation_euler(tag, obj)
 			location = s2p(tag.attrs.get("pos", "0 0 0"))
 			obj.location = location #translate(obj.location, location)
 		return list(self.objects)
 
-def get_rotation_euler(tag):
+def get_rotation_euler(tag, obj=None):
+	if obj:
+		obj.rotation_mode = 'XYZ'
 	if "xdir" in tag.attrs or "ydir" in tag.attrs or "zdir" in tag.attrs:
 		xdir = s2v(tag.attrs.get("xdir", "1 0 0"))
 		ydir = s2v(tag.attrs.get("ydir", "0 1 0"))
@@ -377,7 +380,7 @@ class AssetObjectDae(AssetObjectObj):
 		for obj in self.objects:
 			scale = s2v(tag.attrs.get("scale", "1 1 1"))
 			obj.scale = (scale[0], scale[2], scale[1])
-			obj.rotation_euler = get_rotation_euler(tag)
+			obj.rotation_euler = get_rotation_euler(tag, obj)
 			location = s2p(tag.attrs.get("pos", "0 0 0"))
 			obj.location = location
 
@@ -450,6 +453,9 @@ class AssetObjectGltf(AssetObjectObj):
 		for obj in self.objects:
 			scale = s2v(tag.attrs.get("scale", "1 1 1"))
 			obj.scale = (scale[0], scale[2], scale[1])
+			obj.rotation_euler = get_rotation_euler(tag, obj)
+			
+			'''
 			if "xdir" in tag.attrs or "ydir" in tag.attrs or "zdir" in tag.attrs:
 				xdir = s2v(tag.attrs.get("xdir", "1 0 0"))
 				ydir = s2v(tag.attrs.get("ydir", "0 1 0"))
@@ -460,7 +466,7 @@ class AssetObjectGltf(AssetObjectObj):
 				obj.rotation_euler = (Matrix([xdir, zdir, ydir])).to_euler()
 			else:
 				obj.rotation_euler = fromFwd(s2v(tag.attrs.get("fwd", "0 0 1"))).to_euler()
-
+			'''
 			obj.location = s2p(tag.attrs.get("pos", "0 0 0"))
 	def load(self):
 		if self.loaded:
@@ -546,8 +552,8 @@ class AssetObjectFbx(AssetObjectObj):
 			scale = s2v(tag.attrs.get("scale", "1 1 1"))
 			obj.scale = (scale[0], scale[2], scale[1])
 			
-			obj.rotation_euler = get_rotation_euler(tag)
-			obj.rotation_mode = 'XYZ'
+			obj.rotation_euler = get_rotation_euler(tag, obj)
+			
 
 			obj.location = s2p(tag.attrs.get("pos", "0 0 0"))
 	def load(self):
