@@ -139,6 +139,7 @@ class AssetObjectObj:
 		if self.src is not None:
 			self.src, _ = self.retrieve(self.src)
 			exists = False
+			local = False
 			if self.mtl is None:
 				with open(self.src,'r') as f:
 					mtllib = re.search(r"mtllib (.*?)$", f.read(), re.MULTILINE)
@@ -146,6 +147,8 @@ class AssetObjectObj:
 						try:
 							self.mtl_basepath = self.abs_source( os.path.dirname(self.abs_source(self.basepath, self.tag["src"])), mtllib.group(1))
 							self.mtl, exists = self.retrieve(self.mtl_basepath)
+							if self.mtl:
+								local = True
 						except Exception as e:
 							print(e)
 							self.mtl = None
@@ -155,25 +158,23 @@ class AssetObjectObj:
 				else:
 					mtlpath = os.path.dirname(self.abs_source(self.basepath,self.mtl))
 				src_mtl = self.mtl
-				if not exists:
-					self.mtl, exists = self.retrieve(self.mtl)
+				if not local:
+					mtl_path = self.abs_source( os.path.dirname(self.basepath), self.mtl)
+					self.mtl, exists = self.retrieve(mtl_path)
 				imgfiles = []
 				if os.path.exists(self.mtl) and not exists:
 						
 					with open(self.mtl, "r") as mtlfile:
-						#imgfiles = re.findall(r"\b\w*\.(?:jpg|gif|png)", mtlfile.read())
 						imgfiles = re.findall(r"((\S*?)\.(?:jpg|jpeg|gif|png))", mtlfile.read())
 					
 					for imgfile in imgfiles:
 						if imgfile[0] not in self.downloaded_imgfiles:
 							if not os.path.exists(os.path.join(self.workingpath, imgfile[0])):
 								self.downloaded_imgfiles[imgfile[0]], _ = self.retrieve(imgfile[0], mtlpath)
-
 					# rewrite mtl to point to local file
-					with open(self.abs_target(self.mtl, source=src_mtl), "r") as mtlfile:
+					with open(self.mtl, "r") as mtlfile:
 						file = mtlfile.read()
 					for imgfile in imgfiles:
-						#file = file.replace(self.downloaded_imgfiles[imgfile[0]], os.path.basename(imgfile[0]))
 						file = file.replace(imgfile[0], os.path.basename(self.downloaded_imgfiles[imgfile[0]]))
 					with open(self.mtl, "w") as mtlfile:
 						mtlfile.write(file)
@@ -428,7 +429,10 @@ class AssetObjectGltf(AssetObjectObj):
 			self.imported = True
 			bpy.ops.object.select_all(action='DESELECT')
 			objects = list(bpy.data.objects)
-			bpy.ops.import_scene.gltf(filepath=self.src)
+			try:
+				bpy.ops.import_scene.gltf(filepath=self.src)
+			except Exception as e:
+				print(traceback.format_exc())
 			bpy.ops.object.make_single_user(type='SELECTED_OBJECTS', object=True, obdata=True)
 			bpy.ops.object.transform_apply(location = True, scale = True, rotation = True)
 			self.objects = [o for o in list(bpy.data.objects) if o not in objects]
@@ -443,11 +447,12 @@ class AssetObjectGltf(AssetObjectObj):
 				obj.name = self.id
 		else:
 			newobj = []
+			bpy.ops.object.select_all(action='DESELECT')
 			for obj in self.objects:
-				bpy.ops.object.select_all(action='DESELECT')
-				bpy.ops.object.select_pattern(pattern=obj.name)
-				bpy.ops.object.duplicate(linked=True)
-				newobj.extend(bpy.context.selected_objects)
+				#bpy.ops.object.select_pattern(pattern=obj.name)
+				obj.select_set(state=True)
+			bpy.ops.object.duplicate(linked=True)
+			newobj.extend(bpy.context.selected_objects)
 			self.objects = newobj
 
 		for obj in self.objects:
